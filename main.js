@@ -59,10 +59,16 @@ let isNight = true;
 let hasStarted = false;
 let lastActivity = performance.now();
 
+const IS_VERCEL_DEPLOY =
+  window.location.hostname.endsWith("vercel.app") || window.location.hostname.includes("-git-");
+const ASSET_BASE = IS_VERCEL_DEPLOY
+  ? "https://media.githubusercontent.com/media/dhruvm-04/VirtualTour/main/assets"
+  : "assets";
+
 const MODEL_PATHS = {
-  mainBlock: "assets/mainblock.glb",
-  classroom: "assets/classroom.glb",
-  lift: "assets/lift.glb",
+  mainBlock: `${ASSET_BASE}/mainblock.glb`,
+  classroom: `${ASSET_BASE}/classroom.glb`,
+  lift: `${ASSET_BASE}/lift.glb`,
 };
 
 const MODEL_SPAWN = {
@@ -128,7 +134,7 @@ scene.add(ambientBottom);
 
 // Load EXR environment map for realistic PBR reflections and lighting
 exrLoader.load(
-  "assets/grasslands_sunset_2k.exr",
+  `${ASSET_BASE}/grasslands_sunset_2k.exr`,
   (envTex) => {
     envTex.mapping = THREE.EquirectangularReflectionMapping;
     scene.environment = envTex;
