@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PES University EC Campus | Engineering Block Virtual Tour</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=Syne:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+        "three/addons/controls/PointerLockControls.js": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/controls/PointerLockControls.js",
+        "three/addons/loaders/GLTFLoader.js": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/loaders/GLTFLoader.js",
+        "three/addons/loaders/EXRLoader.js": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/loaders/EXRLoader.js"
+      }
+    }
+    </script>
+  </head>
+  <body>
+    <div id="grain"></div>
+
+    <section id="hero" class="visible">
+      <div class="hero-overlay"></div>
+      <div class="hero-content">
+        <p class="eyebrow">Digital Twin MiniProject</p>
+        <h1>PES University EC Campus</h1>
+        <p class="subtitle">Engineering Block Virtual Tour</p>
+        <button id="enter-btn" class="cta">Enter Experience</button>
+      </div>
+    </section>
+
+    <section id="experience"> 
+      <canvas id="scene-canvas" aria-label="3D walkthrough canvas"></canvas>
+
+      <div id="loading-screen" class="overlay-card visible" role="status" aria-live="polite">
+        <p>Preparing Architectural Experience</p>
+        <div class="progress-track">
+          <div id="progress-bar" class="progress-bar"></div>
+        </div>
+        <span id="progress-text">0%</span>
+      </div>
+
+      <div id="ui" class="ui-shell">
+        <header class="top-bar glass">
+          <div class="title-block">
+            <h2>PES University EC Campus</h2>
+            <p>Engineering Block Virtual Tour</p>
+          </div>
+          <div class="actions">
+            <button id="back-btn" class="ghost-btn" type="button" hidden>Back to Main Block</button>
+            <button id="fullscreen-btn" class="ghost-btn" type="button">Fullscreen</button>
+            <button id="guide-btn" class="ghost-btn" type="button">Guided Path</button>
+          </div>
+        </header>
+
+        <aside class="controls-hint glass">
+          <p>Move: WASD</p>
+          <p>Look: Mouse</p>
+          <p>Unlock: ESC</p>
+          <p>Interact: Click hotspots</p>
+        </aside>
+
+        <div id="hotspot-layer" aria-hidden="false"></div>
+
+        <section class="bottom-wrap">
+          <button id="panel-toggle" class="panel-toggle" type="button">Info Panels</button>
+          <div id="info-panel" class="info-panel glass">
+            <article data-topic="classrooms" class="info-card active">
+              <h3>Lift</h3>
+              <p>Quick vertical access point inside the Engineering Block for floor-to-floor movement.</p>
+            </article>
+            <article data-topic="labs" class="info-card">
+              <h3>Lab</h3>
+              <p>Specialized laboratories supporting electronics, communication, and interdisciplinary prototyping.</p>
+            </article>
+            <article data-topic="infrastructure" class="info-card">
+              <h3>Classroom</h3>
+              <p>Integrated circulation, efficient daylighting, and high-capacity student support facilities.</p>
+            </article>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <div id="interaction-prompt" class="interaction-prompt">Click to lock pointer and walk through</div>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
