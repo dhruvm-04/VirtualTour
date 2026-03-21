@@ -19,6 +19,10 @@ const prompt = document.getElementById("interaction-prompt");
 const backBtn = document.getElementById("back-btn");
 const fullscreenBtn = document.getElementById("fullscreen-btn");
 const guideBtn = document.getElementById("guide-btn");
+const controlsHint = document.querySelector(".controls-hint");
+const mobileControls = document.getElementById("mobile-controls");
+const movePad = document.getElementById("move-pad");
+const moveThumb = document.getElementById("move-thumb");
 
 console.log("DOM elements loaded:", { canvas, hero, enterBtn, ui });
 
@@ -50,6 +54,7 @@ const modelMeshes = [];
 const clock = new THREE.Clock();
 const raycaster = new THREE.Raycaster();
 const movement = { forward: false, backward: false, left: false, right: false };
+const mobileMovement = { forward: 0, right: 0 };
 const velocity = new THREE.Vector3();
 const moveSpeed = 20;
 let cameraFloorY = 1.7;
@@ -58,6 +63,13 @@ let guideLerp = 0;
 let isNight = true;
 let hasStarted = false;
 let lastActivity = performance.now();
+let isMobileView = isMobileViewport();
+let lookTouchId = null;
+let lastLookX = 0;
+let lastLookY = 0;
+let moveTouchId = null;
+let cameraYaw = 0;
+let cameraPitch = 0;
 
 const IS_VERCEL_DEPLOY =
   window.location.hostname.endsWith("vercel.app") || window.location.hostname.includes("-git-");
@@ -149,6 +161,8 @@ exrLoader.load(
 
 loadModel(MODEL_PATHS.mainBlock);
 createHotspotMarkers();
+updateUIForInputMode();
+updateRendererForViewport();
 bindEvents();
 animate();
 
@@ -331,8 +345,13 @@ function bindEvents() {
     hero.classList.remove("visible");
     
     try {
-      controls.lock();
-      console.log("Pointer lock requested");
+      if (!isMobileView) {
+        controls.lock();
+        console.log("Pointer lock requested");
+      } else {
+        prompt.classList.add("hidden");
+        syncMobileLookFromCamera();
+      }
     } catch (e) {
       console.error("Pointer lock failed:", e);
     }
@@ -346,15 +365,29 @@ function bindEvents() {
 
   controls.addEventListener("unlock", () => {
     console.log("Pointer locked released");
-    prompt.classList.remove("hidden");
+    if (!isMobileView) {
+      prompt.classList.remove("hidden");
+    }
     ui.classList.remove("ui-hidden");
   });
 
   canvas.addEventListener("click", () => {
-    if (!controls.isLocked && hasStarted) {
+    if (!isMobileView && !controls.isLocked && hasStarted) {
       controls.lock();
     }
   });
+
+  canvas.addEventListener("touchstart", onCanvasTouchStart, { passive: false });
+  canvas.addEventListener("touchmove", onCanvasTouchMove, { passive: false });
+  canvas.addEventListener("touchend", onCanvasTouchEnd, { passive: false });
+  canvas.addEventListener("touchcancel", onCanvasTouchEnd, { passive: false });
+
+  if (movePad) {
+    movePad.addEventListener("touchstart", onMovePadTouchStart, { passive: false });
+    movePad.addEventListener("touchmove", onMovePadTouchMove, { passive: false });
+    movePad.addEventListener("touchend", onMovePadTouchEnd, { passive: false });
+    movePad.addEventListener("touchcancel", onMovePadTouchEnd, { passive: false });
+  }
 
   panelToggle.addEventListener("click", () => {
     infoPanel.classList.toggle("collapsed");
@@ -388,6 +421,10 @@ function bindEvents() {
 }
 
 function onKeyDown(event) {
+  if (isMobileView) {
+    return;
+  }
+
   if (event.code === "KeyW") movement.forward = true;
   if (event.code === "KeyS") movement.backward = true;
   if (event.code === "KeyA") movement.left = true;
@@ -398,6 +435,10 @@ function onKeyDown(event) {
 }
 
 function onKeyUp(event) {
+  if (isMobileView) {
+    return;
+  }
+
   if (event.code === "KeyW") movement.forward = false;
   if (event.code === "KeyS") movement.backward = false;
   if (event.code === "KeyA") movement.left = false;
@@ -405,13 +446,27 @@ function onKeyUp(event) {
 }
 
 function onResize() {
+  const wasMobile = isMobileView;
+  isMobileView = isMobileViewport();
+
+  if (isMobileView && !wasMobile) {
+    if (controls.isLocked) {
+      controls.unlock();
+    }
+    syncMobileLookFromCamera();
+  }
+
+  updateUIForInputMode();
+  updateRendererForViewport();
+
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
 function moveCamera(delta) {
-  if (!controls.isLocked || guidedMode) {
+  const canMove = guidedMode === false && ((isMobileView && hasStarted) || (!isMobileView && controls.isLocked));
+  if (!canMove) {
     return;
   }
 
@@ -427,6 +482,13 @@ function moveCamera(delta) {
   if (movement.backward) targetVelocity.sub(forwardDir);
   if (movement.left) targetVelocity.sub(sideDir);
   if (movement.right) targetVelocity.add(sideDir);
+
+  if (Math.abs(mobileMovement.forward) > 0.01) {
+    targetVelocity.addScaledVector(forwardDir, mobileMovement.forward);
+  }
+  if (Math.abs(mobileMovement.right) > 0.01) {
+    targetVelocity.addScaledVector(sideDir, mobileMovement.right);
+  }
 
   if (targetVelocity.lengthSq() > 0) {
     targetVelocity.normalize().multiplyScalar(moveSpeed);
@@ -492,7 +554,7 @@ function updateHotspots() {
     }
 
     item.mesh.position.copy(item.position);
-    item.mesh.visible = !controls.isLocked;
+    item.mesh.visible = false;
 
     const projected = item.position.clone().project(camera);
     const isVisible = projected.z < 1 && projected.z > -1;
@@ -501,7 +563,7 @@ function updateHotspots() {
 
     item.button.style.left = `${x}px`;
     item.button.style.top = `${y}px`;
-    item.button.classList.toggle("visible", isVisible && !controls.isLocked && hasStarted);
+    item.button.classList.toggle("visible", isVisible && hasStarted);
   });
 }
 
@@ -602,15 +664,204 @@ function resetInactivity() {
 }
 
 function updateImmersiveUI(now) {
-  if (!controls.isLocked || infoPanel.classList.contains("collapsed") === false) {
+  ui.classList.remove("ui-hidden");
+}
+
+function isMobileViewport() {
+  const touchCapable = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+  return touchCapable && window.matchMedia("(max-width: 900px), (pointer: coarse)").matches;
+}
+
+function updateRendererForViewport() {
+  const portrait = window.innerHeight >= window.innerWidth;
+  if (isMobileView) {
+    camera.fov = portrait ? 84 : 78;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, portrait ? 1.35 : 1.6));
+  } else {
+    camera.fov = 72;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  }
+  camera.updateProjectionMatrix();
+}
+
+function updateUIForInputMode() {
+  if (controlsHint) {
+    const hint = isMobileView
+      ? ["Move: Left Joystick", "Look: Swipe", "Rotate phone to preview", "Interact: Tap hotspots"]
+      : ["Move: WASD", "Look: Mouse", "Unlock: ESC", "Interact: Click hotspots"];
+    const rows = controlsHint.querySelectorAll("p");
+    rows.forEach((row, idx) => {
+      if (hint[idx]) {
+        row.textContent = hint[idx];
+      }
+    });
+  }
+
+  if (mobileControls) {
+    mobileControls.style.display = isMobileView ? "block" : "none";
+  }
+
+  if (!isMobileView) {
+    resetMovePad();
+  }
+
+  if (prompt) {
+    prompt.textContent = isMobileView
+      ? "Swipe to look around and move using the joystick"
+      : "Click to lock pointer and walk through";
+  }
+}
+
+function syncMobileLookFromCamera() {
+  cameraYaw = controls.getObject().rotation.y;
+  cameraPitch = camera.rotation.x;
+}
+
+function applyMobileLook() {
+  controls.getObject().rotation.y = cameraYaw;
+  camera.rotation.x = cameraPitch;
+}
+
+function onCanvasTouchStart(event) {
+  if (!isMobileView || !hasStarted || guidedMode) {
     return;
   }
 
-  const idleMs = now - lastActivity;
-  if (idleMs > 2200) {
-    ui.classList.add("ui-hidden");
-  } else {
-    ui.classList.remove("ui-hidden");
+  if (event.target.closest("#move-pad")) {
+    return;
+  }
+
+  if (lookTouchId !== null) {
+    return;
+  }
+
+  const touch = event.changedTouches[0];
+  if (!touch) {
+    return;
+  }
+
+  lookTouchId = touch.identifier;
+  lastLookX = touch.clientX;
+  lastLookY = touch.clientY;
+}
+
+function onCanvasTouchMove(event) {
+  if (!isMobileView || lookTouchId === null || guidedMode) {
+    return;
+  }
+
+  for (const touch of event.changedTouches) {
+    if (touch.identifier !== lookTouchId) {
+      continue;
+    }
+
+    event.preventDefault();
+    const dx = touch.clientX - lastLookX;
+    const dy = touch.clientY - lastLookY;
+    lastLookX = touch.clientX;
+    lastLookY = touch.clientY;
+
+    cameraYaw -= dx * 0.003;
+    cameraPitch = THREE.MathUtils.clamp(cameraPitch - dy * 0.0022, -1.25, 1.25);
+    applyMobileLook();
+    resetInactivity();
+    break;
+  }
+}
+
+function onCanvasTouchEnd(event) {
+  if (lookTouchId === null) {
+    return;
+  }
+
+  for (const touch of event.changedTouches) {
+    if (touch.identifier === lookTouchId) {
+      lookTouchId = null;
+      break;
+    }
+  }
+}
+
+function onMovePadTouchStart(event) {
+  if (!isMobileView || guidedMode) {
+    return;
+  }
+
+  if (moveTouchId !== null) {
+    return;
+  }
+
+  const touch = event.changedTouches[0];
+  if (!touch) {
+    return;
+  }
+
+  event.preventDefault();
+  moveTouchId = touch.identifier;
+  updateMoveFromTouch(touch);
+  resetInactivity();
+}
+
+function onMovePadTouchMove(event) {
+  if (!isMobileView || moveTouchId === null || guidedMode) {
+    return;
+  }
+
+  for (const touch of event.changedTouches) {
+    if (touch.identifier !== moveTouchId) {
+      continue;
+    }
+
+    event.preventDefault();
+    updateMoveFromTouch(touch);
+    resetInactivity();
+    break;
+  }
+}
+
+function onMovePadTouchEnd(event) {
+  if (moveTouchId === null) {
+    return;
+  }
+
+  for (const touch of event.changedTouches) {
+    if (touch.identifier === moveTouchId) {
+      moveTouchId = null;
+      resetMovePad();
+      break;
+    }
+  }
+}
+
+function updateMoveFromTouch(touch) {
+  if (!movePad) {
+    return;
+  }
+
+  const rect = movePad.getBoundingClientRect();
+  const centerX = rect.left + rect.width * 0.5;
+  const centerY = rect.top + rect.height * 0.5;
+  const dx = touch.clientX - centerX;
+  const dy = touch.clientY - centerY;
+  const maxRadius = rect.width * 0.36;
+  const distance = Math.hypot(dx, dy);
+  const clamped = distance > maxRadius && distance > 0 ? maxRadius / distance : 1;
+  const x = dx * clamped;
+  const y = dy * clamped;
+
+  mobileMovement.right = THREE.MathUtils.clamp(x / maxRadius, -1, 1);
+  mobileMovement.forward = THREE.MathUtils.clamp(-y / maxRadius, -1, 1);
+
+  if (moveThumb) {
+    moveThumb.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+  }
+}
+
+function resetMovePad() {
+  mobileMovement.forward = 0;
+  mobileMovement.right = 0;
+  if (moveThumb) {
+    moveThumb.style.transform = "translate(-50%, -50%)";
   }
 }
 

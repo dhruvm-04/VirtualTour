@@ -38,13 +38,13 @@
     <section id="experience"> 
       <canvas id="scene-canvas" aria-label="3D walkthrough canvas"></canvas>
 
-      <div id="loading-screen" class="overlay-card visible" role="status" aria-live="polite">
+      <output id="loading-screen" class="overlay-card visible" aria-live="polite">
         <p>Preparing Architectural Experience</p>
         <div class="progress-track">
           <div id="progress-bar" class="progress-bar"></div>
         </div>
         <span id="progress-text">0%</span>
-      </div>
+      </output>
 
       <div id="ui" class="ui-shell">
         <header class="top-bar glass">
@@ -67,6 +67,12 @@
         </aside>
 
         <div id="hotspot-layer" aria-hidden="false"></div>
+
+        <div id="mobile-controls" aria-hidden="false">
+          <div id="move-pad" class="touch-pad" role="application" aria-label="Movement joystick">
+            <div id="move-thumb" class="touch-thumb"></div>
+          </div>
+        </div>
 
         <section class="bottom-wrap">
           <button id="panel-toggle" class="panel-toggle" type="button">Info Panels</button>
