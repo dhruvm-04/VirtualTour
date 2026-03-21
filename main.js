@@ -762,15 +762,25 @@ function stopWelcomeAutoFade() {
 }
 
 function syncMobileLookFromCamera() {
-  cameraYaw = controls.getObject().rotation.y;
+  const lookObject = controls.getObject();
+  cameraYaw = lookObject === camera ? camera.rotation.y : lookObject.rotation.y;
   cameraPitch = THREE.MathUtils.clamp(camera.rotation.x, -1.25, 1.25);
-  camera.rotation.set(cameraPitch, 0, 0);
+  camera.rotation.z = 0;
 }
 
 function applyMobileLook() {
   cameraPitch = THREE.MathUtils.clamp(cameraPitch, -1.25, 1.25);
-  controls.getObject().rotation.y = cameraYaw;
-  camera.rotation.set(cameraPitch, 0, 0);
+  const lookObject = controls.getObject();
+
+  if (lookObject === camera) {
+    camera.rotation.set(cameraPitch, cameraYaw, 0, "YXZ");
+    return;
+  }
+
+  lookObject.rotation.y = cameraYaw;
+  camera.rotation.x = cameraPitch;
+  camera.rotation.y = 0;
+  camera.rotation.z = 0;
 }
 
 function onCanvasTouchStart(event) {
