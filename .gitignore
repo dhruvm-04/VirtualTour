@@ -1,3 +1,2 @@
 # Archive exports should never be committed
-*.xip
 *.zip
