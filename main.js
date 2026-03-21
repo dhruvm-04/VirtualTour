@@ -23,6 +23,7 @@ const controlsHint = document.querySelector(".controls-hint");
 const mobileControls = document.getElementById("mobile-controls");
 const movePad = document.getElementById("move-pad");
 const moveThumb = document.getElementById("move-thumb");
+const mobilePopup = document.getElementById("mobile-popup");
 
 console.log("DOM elements loaded:", { canvas, hero, enterBtn, ui });
 
@@ -32,6 +33,7 @@ scene.fog = new THREE.FogExp2(0x0a0f14, 0.0008);
 
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.01, 2500);
 camera.position.set(0, 1.7, 0);
+camera.rotation.order = "YXZ";
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -70,6 +72,8 @@ let lastLookY = 0;
 let moveTouchId = null;
 let cameraYaw = 0;
 let cameraPitch = 0;
+let mobilePopupTimer = null;
+let welcomeFadeTimer = null;
 
 const IS_VERCEL_DEPLOY =
   window.location.hostname.endsWith("vercel.app") || window.location.hostname.includes("-git-");
@@ -163,6 +167,7 @@ loadModel(MODEL_PATHS.mainBlock);
 createHotspotMarkers();
 updateUIForInputMode();
 updateRendererForViewport();
+setActiveCard("welcome");
 bindEvents();
 animate();
 
@@ -351,10 +356,12 @@ function bindEvents() {
       } else {
         prompt.classList.add("hidden");
         syncMobileLookFromCamera();
+        showMobileJoystickPopup();
       }
     } catch (e) {
       console.error("Pointer lock failed:", e);
     }
+    startWelcomeAutoFade();
     resetInactivity();
   });
 
@@ -390,6 +397,7 @@ function bindEvents() {
   }
 
   panelToggle.addEventListener("click", () => {
+    stopWelcomeAutoFade();
     infoPanel.classList.toggle("collapsed");
     resetInactivity();
   });
@@ -568,6 +576,7 @@ function updateHotspots() {
 }
 
 function setActiveCard(topic) {
+  stopWelcomeAutoFade();
   const cards = infoPanel.querySelectorAll(".info-card");
   cards.forEach((card) => card.classList.toggle("active", card.dataset.topic === topic));
   infoPanel.classList.remove("collapsed");
@@ -687,7 +696,7 @@ function updateRendererForViewport() {
 function updateUIForInputMode() {
   if (controlsHint) {
     const hint = isMobileView
-      ? ["Move: Left Joystick", "Look: Swipe", "Rotate phone to preview", "Interact: Tap hotspots"]
+      ? ["Move: Left Joystick", "Look: Swipe", "Use panel buttons to teleport", "Interact: Tap hotspots"]
       : ["Move: WASD", "Look: Mouse", "Unlock: ESC", "Interact: Click hotspots"];
     const rows = controlsHint.querySelectorAll("p");
     rows.forEach((row, idx) => {
@@ -707,19 +716,61 @@ function updateUIForInputMode() {
 
   if (prompt) {
     prompt.textContent = isMobileView
-      ? "Swipe to look around and move using the joystick"
+      ? "Use joystick to move and swipe to look"
       : "Click to lock pointer and walk through";
+  }
+}
+
+function showMobileJoystickPopup() {
+  if (!mobilePopup || !isMobileView) {
+    return;
+  }
+
+  if (mobilePopupTimer) {
+    clearTimeout(mobilePopupTimer);
+  }
+
+  mobilePopup.classList.add("visible");
+  mobilePopupTimer = setTimeout(() => {
+    mobilePopup.classList.remove("visible");
+  }, 4000);
+}
+
+function startWelcomeAutoFade() {
+  if (!infoPanel) {
+    return;
+  }
+
+  stopWelcomeAutoFade();
+  infoPanel.classList.remove("collapsed");
+  infoPanel.classList.add("auto-fade");
+
+  welcomeFadeTimer = setTimeout(() => {
+    infoPanel.classList.remove("auto-fade");
+    infoPanel.classList.add("collapsed");
+  }, 10000);
+}
+
+function stopWelcomeAutoFade() {
+  if (welcomeFadeTimer) {
+    clearTimeout(welcomeFadeTimer);
+    welcomeFadeTimer = null;
+  }
+  if (infoPanel) {
+    infoPanel.classList.remove("auto-fade");
   }
 }
 
 function syncMobileLookFromCamera() {
   cameraYaw = controls.getObject().rotation.y;
-  cameraPitch = camera.rotation.x;
+  cameraPitch = THREE.MathUtils.clamp(camera.rotation.x, -1.25, 1.25);
+  camera.rotation.set(cameraPitch, 0, 0);
 }
 
 function applyMobileLook() {
+  cameraPitch = THREE.MathUtils.clamp(cameraPitch, -1.25, 1.25);
   controls.getObject().rotation.y = cameraYaw;
-  camera.rotation.x = cameraPitch;
+  camera.rotation.set(cameraPitch, 0, 0);
 }
 
 function onCanvasTouchStart(event) {
