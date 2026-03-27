@@ -3,7 +3,9 @@ import { PointerLockControls } from "three/addons/controls/PointerLockControls.j
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { EXRLoader } from "three/addons/loaders/EXRLoader.js";
 
+
 console.log("Script initializing...");
+
 
 const canvas = document.getElementById("scene-canvas");
 const hero = document.getElementById("hero");
@@ -25,31 +27,48 @@ const movePad = document.getElementById("move-pad");
 const moveThumb = document.getElementById("move-thumb");
 const mobilePopup = document.getElementById("mobile-popup");
 
+
 console.log("DOM elements loaded:", { canvas, hero, enterBtn, ui });
+
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1a2e);
 scene.fog = new THREE.FogExp2(0x0a0f14, 0.0008);
 
+
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.01, 2500);
 camera.position.set(0, 1.7, 0);
 camera.rotation.order = "YXZ";
+
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
+renderer.toneMappingExposure = 0.42;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-if ("physicallyCorrectLights" in renderer) {
+
+// physicallyCorrectLights was removed in r155; useLegacyLights = false is the
+// modern equivalent. Both checks are kept for broad version compatibility.
+if ("useLegacyLights" in renderer) {
+  renderer.useLegacyLights = false;
+} else if ("physicallyCorrectLights" in renderer) {
   renderer.physicallyCorrectLights = true;
 }
+
+// PMREMGenerator must be created after the renderer and before any environment
+// map loads. Calling compileEquirectangularShader() here pre-warms the shader
+// so the first EXR load does not stall the render loop.
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+pmremGenerator.compileEquirectangularShader();
+
 
 // Pointer lock provides first-person look control and immersive movement.
 const controls = new PointerLockControls(camera, document.body);
 scene.add(controls.getObject());
+
 
 let modelRoot = null;
 const modelMeshes = [];
@@ -75,11 +94,13 @@ let cameraPitch = 0;
 let mobilePopupTimer = null;
 let welcomeFadeTimer = null;
 
+
 const IS_VERCEL_DEPLOY =
   window.location.hostname.endsWith("vercel.app") || window.location.hostname.includes("-git-");
 const ASSET_BASE = IS_VERCEL_DEPLOY
   ? "https://media.githubusercontent.com/media/dhruvm-04/VirtualTour/main/assets"
   : "assets";
+
 
 const MODEL_PATHS = {
   mainBlock: `${ASSET_BASE}/mainblock.glb`,
@@ -87,19 +108,23 @@ const MODEL_PATHS = {
   lift: `${ASSET_BASE}/lift.glb`,
 };
 
+
 const MODEL_SPAWN = {
   [MODEL_PATHS.mainBlock]: { eyeHeightMin: 4, eyeHeightRatio: 0.067, eyeHeightMax: 7, zOffsetRatio: 0.18 },
   [MODEL_PATHS.classroom]: { eyeHeightMin: 6, eyeHeightRatio: 0.16, eyeHeightMax: 4.2, zOffsetRatio: 0.04 },
   [MODEL_PATHS.lift]: { eyeHeightMin: 3.6, eyeHeightRatio: 0.96, eyeHeightMax: 5.28, zOffsetRatio: 0 },
 };
 
+
 let activeModelPath = MODEL_PATHS.mainBlock;
+
 
 const hotspotData = [
   { id: "classrooms", label: "Lift", position: new THREE.Vector3(), mesh: null, button: null },
   { id: "labs", label: "Lab", position: new THREE.Vector3(), mesh: null, button: null },
   { id: "infrastructure", label: "Classroom", position: new THREE.Vector3(), mesh: null, button: null },
 ];
+
 
 const guidePath = [
   new THREE.Vector3(0, 1.7, 0),
@@ -108,6 +133,7 @@ const guidePath = [
   new THREE.Vector3(-2.5, 1.7, -18),
   new THREE.Vector3(2.5, 1.7, -24),
 ];
+
 
 const manager = new THREE.LoadingManager();
 manager.onProgress = (_, loaded, total) => {
@@ -122,13 +148,20 @@ manager.onLoad = () => {
   setTimeout(() => loadingScreen.classList.remove("visible"), 320);
 };
 
-const gltfLoader = new GLTFLoader(manager);
-const exrLoader = new EXRLoader(manager);
 
-const ambient = new THREE.HemisphereLight(0xd8e4f0, 0x3a4450, 0.72);
+const gltfLoader = new GLTFLoader(manager);
+
+// EXRLoader is intentionally kept outside the LoadingManager so that a slow
+// or failed HDRI download never blocks the model-loading progress bar or
+// prevents the loading screen from clearing.
+const exrLoader = new EXRLoader();
+
+
+const ambient = new THREE.HemisphereLight(0xc8d0e8, 0x1a2030, 0.12);
 scene.add(ambient);
 
-const key = new THREE.DirectionalLight(0xffffff, 3.2);
+// Moonlight: cool-tinted, very low intensity
+const key = new THREE.DirectionalLight(0xb0c4de, 0.18);
 key.position.set(24, 32, 18);
 key.castShadow = true;
 key.shadow.mapSize.set(2048, 2048);
@@ -137,31 +170,65 @@ key.shadow.camera.far = 120;
 key.shadow.radius = 5;
 scene.add(key);
 
-const fill = new THREE.PointLight(0xc9dce8, 1.1, 60, 2);
+// Subtle warm interior fill lights
+const fill = new THREE.PointLight(0xffd080, 0.4, 60, 2);
 fill.position.set(-6, 4, -8);
 scene.add(fill);
 
-const accent = new THREE.PointLight(0xa8bfd4, 0.65, 50, 2.2);
+const accent = new THREE.PointLight(0xa0b8d0, 0.25, 50, 2.2);
 accent.position.set(8, 2.5, 6);
 scene.add(accent);
 
-const ambientBottom = new THREE.AmbientLight(0xffffff, 0.3);
-scene.add(ambientBottom);
+// Remove ambientBottom entirely — the HDRI handles ambient now
 
-// Load EXR environment map for realistic PBR reflections and lighting
+
+
+
+
+
+
+// FIX: Raw EXR textures assigned directly to scene.environment produce
+// incorrect (very dark) PBR lighting. The texture must first be processed
+// by PMREMGenerator so Three.js can sample it at the correct mip levels for
+// each material roughness value. The processed envMap is used for both the
+// scene lighting environment and the visible background.
 exrLoader.load(
   `${ASSET_BASE}/grasslands_sunset_2k.exr`,
   (envTex) => {
-    envTex.mapping = THREE.EquirectangularReflectionMapping;
-    scene.environment = envTex;
-    scene.background = envTex;
-    console.log("HDRI environment loaded successfully");
+    const envMap = pmremGenerator.fromEquirectangular(envTex).texture;
+    scene.environment = envMap;
+    scene.background = envMap;
+    renderer.toneMappingExposure = 0.42;
+
+    // The raw EXR data is no longer needed once PMREM conversion is done.
+    envTex.dispose();
+    pmremGenerator.dispose();
+
+    // Re-apply the environment to any already-loaded model materials so they
+    // pick up the corrected envMap even if the model loaded before the HDRI.
+    if (modelRoot) {
+      modelRoot.traverse((node) => {
+        if (node.isMesh && node.material) {
+          const mats = Array.isArray(node.material) ? node.material : [node.material];
+          mats.forEach((mat) => {
+            mat.envMap = envMap;
+            mat.envMapIntensity = 1.4;
+            mat.needsUpdate = true;
+          });
+        }
+      });
+    }
+
+    console.log("HDRI environment loaded and PMREM processed successfully");
   },
   undefined,
   (error) => {
-    console.warn("HDRI failed to load, using fallback:", error);
+    console.warn("HDRI failed to load, using fallback colour background:", error);
+    // pmremGenerator is still disposed so it does not leak GPU memory.
+    pmremGenerator.dispose();
   }
 );
+
 
 loadModel(MODEL_PATHS.mainBlock);
 createHotspotMarkers();
@@ -171,7 +238,9 @@ setActiveCard("welcome");
 bindEvents();
 animate();
 
+
 console.log("Initialization complete. Waiting for Enter button click...");
+
 
 function loadModel(modelPath, onComplete) {
   gltfLoader.load(
@@ -179,10 +248,12 @@ function loadModel(modelPath, onComplete) {
     (gltf) => {
       console.log("Model loaded successfully", gltf);
 
+
       if (modelRoot) {
         scene.remove(modelRoot);
       }
       modelMeshes.length = 0;
+
 
       modelRoot = gltf.scene;
       modelRoot.traverse((node) => {
@@ -191,14 +262,25 @@ function loadModel(modelPath, onComplete) {
           node.receiveShadow = true;
           node.frustumCulled = false;
           if (node.material) {
-            node.material.envMapIntensity = 1.15;
-            node.material.needsUpdate = true;
+            const mats = Array.isArray(node.material) ? node.material : [node.material];
+            mats.forEach((mat) => {
+              // If the HDRI has already been processed and set on the scene,
+              // propagate it explicitly so late-loading models are not left
+              // with a dark fallback until the next material update cycle.
+              if (scene.environment) {
+                mat.envMap = scene.environment;
+              }
+              mat.envMapIntensity = 1.0;
+              mat.needsUpdate = true;
+            });
           }
           modelMeshes.push(node);
         }
       });
 
+
       logModelTextureDiagnostics(modelRoot, modelPath);
+
 
       const box = new THREE.Box3().setFromObject(modelRoot);
       const center = box.getCenter(new THREE.Vector3());
@@ -209,7 +291,9 @@ function loadModel(modelPath, onComplete) {
         Math.max(spawnTuning.eyeHeightMin, size.y * spawnTuning.eyeHeightRatio)
       );
 
+
       console.log("Model bounds:", { center, size });
+
 
       // Camera starts inside the model to begin the walkthrough in-context.
       const startPos = new THREE.Vector3(
@@ -219,14 +303,17 @@ function loadModel(modelPath, onComplete) {
       );
       console.log("Start position:", startPos);
 
+
       controls.getObject().position.copy(startPos);
       cameraFloorY = startPos.y;
       velocity.set(0, 0, 0);
+
 
       // Hotspots are distributed along the interior axis of the building volume.
       hotspotData[0].position.set(center.x + size.x * 0.15, startPos.y + 0.25, center.z + size.z * 0.1);
       hotspotData[1].position.set(center.x - size.x * 0.22, startPos.y + 0.25, center.z - size.z * 0.15);
       hotspotData[2].position.set(center.x, startPos.y + 0.25, center.z - size.z * 0.33);
+
 
       guidePath[0].copy(startPos);
       guidePath[1].set(center.x + size.x * 0.2, startPos.y, center.z + size.z * 0.04);
@@ -234,11 +321,13 @@ function loadModel(modelPath, onComplete) {
       guidePath[3].set(center.x + size.x * 0.05, startPos.y, center.z - size.z * 0.28);
       guidePath[4].set(center.x, startPos.y, center.z - size.z * 0.38);
 
+
       scene.add(modelRoot);
       activeModelPath = modelPath;
       updateBackButtonVisibility();
       console.log("Model added to scene");
       loadingScreen.classList.remove("visible");
+
 
       if (typeof onComplete === "function") {
         onComplete();
@@ -260,6 +349,7 @@ function loadModel(modelPath, onComplete) {
   );
 }
 
+
 function logModelTextureDiagnostics(root, modelPath) {
   const textureSlots = [
     "map",
@@ -271,13 +361,16 @@ function logModelTextureDiagnostics(root, modelPath) {
     "alphaMap",
   ];
 
+
   let textureRefCount = 0;
   let textureWithImageCount = 0;
+
 
   root.traverse((node) => {
     if (!node.isMesh || !node.material) {
       return;
     }
+
 
     const materials = Array.isArray(node.material) ? node.material : [node.material];
     materials.forEach((mat) => {
@@ -287,11 +380,13 @@ function logModelTextureDiagnostics(root, modelPath) {
           return;
         }
 
+
         textureRefCount += 1;
         if (tex.image) {
           textureWithImageCount += 1;
           return;
         }
+
 
         console.warn("Texture reference without image data", {
           modelPath,
@@ -303,11 +398,13 @@ function logModelTextureDiagnostics(root, modelPath) {
     });
   });
 
+
   console.log("Model texture diagnostic", {
     modelPath,
     textureRefCount,
     textureWithImageCount,
   });
+
 
   if (textureRefCount === 0) {
     console.warn(
@@ -315,6 +412,7 @@ function logModelTextureDiagnostics(root, modelPath) {
     );
   }
 }
+
 
 function createHotspotMarkers() {
   hotspotData.forEach((item) => {
@@ -327,6 +425,7 @@ function createHotspotMarkers() {
     item.mesh = marker;
     scene.add(marker);
 
+
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = item.label;
@@ -336,6 +435,7 @@ function createHotspotMarkers() {
     item.button = button;
   });
 }
+
 
 function bindEvents() {
   if (!enterBtn) {
@@ -365,10 +465,12 @@ function bindEvents() {
     resetInactivity();
   });
 
+
   controls.addEventListener("lock", () => {
     console.log("Pointer lock successful");
     prompt.classList.add("hidden");
   });
+
 
   controls.addEventListener("unlock", () => {
     console.log("Pointer locked released");
@@ -378,16 +480,19 @@ function bindEvents() {
     ui.classList.remove("ui-hidden");
   });
 
+
   canvas.addEventListener("click", () => {
     if (!isMobileView && !controls.isLocked && hasStarted) {
       controls.lock();
     }
   });
 
+
   canvas.addEventListener("touchstart", onCanvasTouchStart, { passive: false });
   canvas.addEventListener("touchmove", onCanvasTouchMove, { passive: false });
   canvas.addEventListener("touchend", onCanvasTouchEnd, { passive: false });
   canvas.addEventListener("touchcancel", onCanvasTouchEnd, { passive: false });
+
 
   if (movePad) {
     movePad.addEventListener("touchstart", onMovePadTouchStart, { passive: false });
@@ -396,11 +501,13 @@ function bindEvents() {
     movePad.addEventListener("touchcancel", onMovePadTouchEnd, { passive: false });
   }
 
+
   panelToggle.addEventListener("click", () => {
     stopWelcomeAutoFade();
     infoPanel.classList.toggle("collapsed");
     resetInactivity();
   });
+
 
   // Clicking an info card allows direct contextual actions such as teleport.
   infoPanel.addEventListener("click", (event) => {
@@ -411,6 +518,7 @@ function bindEvents() {
     setActiveCard(card.dataset.topic);
   });
 
+
   fullscreenBtn.addEventListener("click", toggleFullscreen);
   guideBtn.addEventListener("click", toggleGuidedMode);
   if (backBtn) {
@@ -420,6 +528,7 @@ function bindEvents() {
     });
   }
 
+
   window.addEventListener("resize", onResize);
   document.addEventListener("keydown", onKeyDown);
   document.addEventListener("keyup", onKeyUp);
@@ -428,10 +537,12 @@ function bindEvents() {
   document.addEventListener("touchstart", resetInactivity, { passive: true });
 }
 
+
 function onKeyDown(event) {
   if (isMobileView) {
     return;
   }
+
 
   if (event.code === "KeyW") movement.forward = true;
   if (event.code === "KeyS") movement.backward = true;
@@ -442,10 +553,12 @@ function onKeyDown(event) {
   resetInactivity();
 }
 
+
 function onKeyUp(event) {
   if (isMobileView) {
     return;
   }
+
 
   if (event.code === "KeyW") movement.forward = false;
   if (event.code === "KeyS") movement.backward = false;
@@ -453,9 +566,11 @@ function onKeyUp(event) {
   if (event.code === "KeyD") movement.right = false;
 }
 
+
 function onResize() {
   const wasMobile = isMobileView;
   isMobileView = isMobileViewport();
+
 
   if (isMobileView && !wasMobile) {
     if (controls.isLocked) {
@@ -464,13 +579,16 @@ function onResize() {
     syncMobileLookFromCamera();
   }
 
+
   updateUIForInputMode();
   updateRendererForViewport();
+
 
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
+
 
 function moveCamera(delta) {
   const canMove = guidedMode === false && ((isMobileView && hasStarted) || (!isMobileView && controls.isLocked));
@@ -478,18 +596,22 @@ function moveCamera(delta) {
     return;
   }
 
+
   const forwardDir = new THREE.Vector3();
   camera.getWorldDirection(forwardDir);
   forwardDir.y = 0;
   forwardDir.normalize();
 
+
   const sideDir = new THREE.Vector3().crossVectors(forwardDir, camera.up).normalize();
   const targetVelocity = new THREE.Vector3();
+
 
   if (movement.forward) targetVelocity.add(forwardDir);
   if (movement.backward) targetVelocity.sub(forwardDir);
   if (movement.left) targetVelocity.sub(sideDir);
   if (movement.right) targetVelocity.add(sideDir);
+
 
   if (Math.abs(mobileMovement.forward) > 0.01) {
     targetVelocity.addScaledVector(forwardDir, mobileMovement.forward);
@@ -498,28 +620,35 @@ function moveCamera(delta) {
     targetVelocity.addScaledVector(sideDir, mobileMovement.right);
   }
 
+
   if (targetVelocity.lengthSq() > 0) {
     targetVelocity.normalize().multiplyScalar(moveSpeed);
   }
 
+
   velocity.lerp(targetVelocity, Math.min(1, delta * 9));
+
 
   const nextPos = controls.getObject().position.clone();
   const step = velocity.clone().multiplyScalar(delta);
   const horizontalStep = new THREE.Vector3(step.x, 0, step.z);
 
+
   if (!hasCollision(nextPos, horizontalStep)) {
     nextPos.add(horizontalStep);
   }
+
 
   nextPos.y = cameraFloorY;
   controls.getObject().position.copy(nextPos);
 }
 
+
 function hasCollision(position, stepVec) {
   if (!modelMeshes.length || stepVec.lengthSq() < 0.00001) {
     return false;
   }
+
 
   const direction = stepVec.clone().normalize();
   const origin = position.clone();
@@ -530,10 +659,12 @@ function hasCollision(position, stepVec) {
   return intersections.length > 0;
 }
 
+
 function updateGuidedPath(delta) {
   if (!guidedMode || !modelRoot) {
     return;
   }
+
 
   const totalSegments = guidePath.length - 1;
   guideLerp += delta * 0.08;
@@ -542,32 +673,39 @@ function updateGuidedPath(delta) {
   const index = Math.floor(scaled);
   const localT = scaled - index;
 
+
   const from = guidePath[index];
   const to = guidePath[Math.min(index + 1, totalSegments)];
   const targetPos = new THREE.Vector3().lerpVectors(from, to, localT);
   controls.getObject().position.lerp(targetPos, Math.min(1, delta * 1.7));
+
 
   const nextIndex = Math.min(index + 1, totalSegments);
   const lookTarget = guidePath[nextIndex].clone();
   camera.lookAt(lookTarget);
 }
 
+
 function updateHotspots() {
   const width = window.innerWidth;
   const height = window.innerHeight;
+
 
   hotspotData.forEach((item) => {
     if (!item.mesh || !item.button || !modelRoot) {
       return;
     }
 
+
     item.mesh.position.copy(item.position);
     item.mesh.visible = false;
+
 
     const projected = item.position.clone().project(camera);
     const isVisible = projected.z < 1 && projected.z > -1;
     const x = (projected.x * 0.5 + 0.5) * width;
     const y = (projected.y * -0.5 + 0.5) * height;
+
 
     item.button.style.left = `${x}px`;
     item.button.style.top = `${y}px`;
@@ -575,11 +713,13 @@ function updateHotspots() {
   });
 }
 
+
 function setActiveCard(topic) {
   stopWelcomeAutoFade();
   const cards = infoPanel.querySelectorAll(".info-card");
   cards.forEach((card) => card.classList.toggle("active", card.dataset.topic === topic));
   infoPanel.classList.remove("collapsed");
+
 
   // Topic mapping in current UI copy:
   // "classrooms" => Lift
@@ -588,57 +728,69 @@ function setActiveCard(topic) {
     teleportToLift();
   }
 
+
   if (topic === "infrastructure") {
     teleportToClassroom();
   }
 
+
   resetInactivity();
 }
+
 
 function teleportToClassroom() {
   if (activeModelPath === MODEL_PATHS.classroom) {
     return;
   }
 
+
   guidedMode = false;
   guideBtn.textContent = "Guided Path";
   loadingScreen.classList.add("visible");
   progressText.textContent = "Teleporting to Classroom...";
+
 
   loadModel(MODEL_PATHS.classroom, () => {
     progressText.textContent = "100%";
   });
 }
 
+
 function teleportToLift() {
   if (activeModelPath === MODEL_PATHS.lift) {
     return;
   }
+
 
   guidedMode = false;
   guideBtn.textContent = "Guided Path";
   loadingScreen.classList.add("visible");
   progressText.textContent = "Teleporting to Lift...";
 
+
   loadModel(MODEL_PATHS.lift, () => {
     progressText.textContent = "100%";
   });
 }
+
 
 function teleportToMainBlock() {
   if (activeModelPath === MODEL_PATHS.mainBlock) {
     return;
   }
 
+
   guidedMode = false;
   guideBtn.textContent = "Guided Path";
   loadingScreen.classList.add("visible");
   progressText.textContent = "Returning to Main Block...";
 
+
   loadModel(MODEL_PATHS.mainBlock, () => {
     progressText.textContent = "100%";
   });
 }
+
 
 function updateBackButtonVisibility() {
   if (!backBtn) {
@@ -646,6 +798,7 @@ function updateBackButtonVisibility() {
   }
   backBtn.hidden = activeModelPath === MODEL_PATHS.mainBlock;
 }
+
 
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
@@ -656,6 +809,7 @@ function toggleFullscreen() {
   resetInactivity();
 }
 
+
 function toggleGuidedMode() {
   guidedMode = !guidedMode;
   guideBtn.textContent = guidedMode ? "Guided: On" : "Guided Path";
@@ -665,6 +819,7 @@ function toggleGuidedMode() {
   resetInactivity();
 }
 
+
 function resetInactivity() {
   lastActivity = performance.now();
   if (!infoPanel.classList.contains("collapsed")) {
@@ -672,14 +827,17 @@ function resetInactivity() {
   }
 }
 
+
 function updateImmersiveUI(now) {
   ui.classList.remove("ui-hidden");
 }
+
 
 function isMobileViewport() {
   const touchCapable = "ontouchstart" in window || navigator.maxTouchPoints > 0;
   return touchCapable && window.matchMedia("(max-width: 900px), (pointer: coarse)").matches;
 }
+
 
 function updateRendererForViewport() {
   const portrait = window.innerHeight >= window.innerWidth;
@@ -692,6 +850,7 @@ function updateRendererForViewport() {
   }
   camera.updateProjectionMatrix();
 }
+
 
 function updateUIForInputMode() {
   if (controlsHint) {
@@ -706,13 +865,16 @@ function updateUIForInputMode() {
     });
   }
 
+
   if (mobileControls) {
     mobileControls.style.display = isMobileView ? "block" : "none";
   }
 
+
   if (!isMobileView) {
     resetMovePad();
   }
+
 
   if (prompt) {
     prompt.textContent = isMobileView
@@ -721,14 +883,17 @@ function updateUIForInputMode() {
   }
 }
 
+
 function showMobileJoystickPopup() {
   if (!mobilePopup || !isMobileView) {
     return;
   }
 
+
   if (mobilePopupTimer) {
     clearTimeout(mobilePopupTimer);
   }
+
 
   mobilePopup.classList.add("visible");
   mobilePopupTimer = setTimeout(() => {
@@ -736,20 +901,24 @@ function showMobileJoystickPopup() {
   }, 4000);
 }
 
+
 function startWelcomeAutoFade() {
   if (!infoPanel) {
     return;
   }
 
+
   stopWelcomeAutoFade();
   infoPanel.classList.remove("collapsed");
   infoPanel.classList.add("auto-fade");
+
 
   welcomeFadeTimer = setTimeout(() => {
     infoPanel.classList.remove("auto-fade");
     infoPanel.classList.add("collapsed");
   }, 10000);
 }
+
 
 function stopWelcomeAutoFade() {
   if (welcomeFadeTimer) {
@@ -761,6 +930,7 @@ function stopWelcomeAutoFade() {
   }
 }
 
+
 function syncMobileLookFromCamera() {
   const lookObject = controls.getObject();
   cameraYaw = lookObject === camera ? camera.rotation.y : lookObject.rotation.y;
@@ -768,14 +938,17 @@ function syncMobileLookFromCamera() {
   camera.rotation.z = 0;
 }
 
+
 function applyMobileLook() {
   cameraPitch = THREE.MathUtils.clamp(cameraPitch, -1.25, 1.25);
   const lookObject = controls.getObject();
+
 
   if (lookObject === camera) {
     camera.rotation.set(cameraPitch, cameraYaw, 0, "YXZ");
     return;
   }
+
 
   lookObject.rotation.y = cameraYaw;
   camera.rotation.x = cameraPitch;
@@ -783,44 +956,53 @@ function applyMobileLook() {
   camera.rotation.z = 0;
 }
 
+
 function onCanvasTouchStart(event) {
   if (!isMobileView || !hasStarted || guidedMode) {
     return;
   }
 
+
   if (event.target.closest("#move-pad")) {
     return;
   }
 
+
   if (lookTouchId !== null) {
     return;
   }
+
 
   const touch = event.changedTouches[0];
   if (!touch) {
     return;
   }
 
+
   lookTouchId = touch.identifier;
   lastLookX = touch.clientX;
   lastLookY = touch.clientY;
 }
+
 
 function onCanvasTouchMove(event) {
   if (!isMobileView || lookTouchId === null || guidedMode) {
     return;
   }
 
+
   for (const touch of event.changedTouches) {
     if (touch.identifier !== lookTouchId) {
       continue;
     }
+
 
     event.preventDefault();
     const dx = touch.clientX - lastLookX;
     const dy = touch.clientY - lastLookY;
     lastLookX = touch.clientX;
     lastLookY = touch.clientY;
+
 
     cameraYaw -= dx * 0.003;
     cameraPitch = THREE.MathUtils.clamp(cameraPitch - dy * 0.0022, -1.25, 1.25);
@@ -830,10 +1012,12 @@ function onCanvasTouchMove(event) {
   }
 }
 
+
 function onCanvasTouchEnd(event) {
   if (lookTouchId === null) {
     return;
   }
+
 
   for (const touch of event.changedTouches) {
     if (touch.identifier === lookTouchId) {
@@ -843,19 +1027,23 @@ function onCanvasTouchEnd(event) {
   }
 }
 
+
 function onMovePadTouchStart(event) {
   if (!isMobileView || guidedMode) {
     return;
   }
 
+
   if (moveTouchId !== null) {
     return;
   }
+
 
   const touch = event.changedTouches[0];
   if (!touch) {
     return;
   }
+
 
   event.preventDefault();
   moveTouchId = touch.identifier;
@@ -863,15 +1051,18 @@ function onMovePadTouchStart(event) {
   resetInactivity();
 }
 
+
 function onMovePadTouchMove(event) {
   if (!isMobileView || moveTouchId === null || guidedMode) {
     return;
   }
 
+
   for (const touch of event.changedTouches) {
     if (touch.identifier !== moveTouchId) {
       continue;
     }
+
 
     event.preventDefault();
     updateMoveFromTouch(touch);
@@ -880,10 +1071,12 @@ function onMovePadTouchMove(event) {
   }
 }
 
+
 function onMovePadTouchEnd(event) {
   if (moveTouchId === null) {
     return;
   }
+
 
   for (const touch of event.changedTouches) {
     if (touch.identifier === moveTouchId) {
@@ -894,10 +1087,12 @@ function onMovePadTouchEnd(event) {
   }
 }
 
+
 function updateMoveFromTouch(touch) {
   if (!movePad) {
     return;
   }
+
 
   const rect = movePad.getBoundingClientRect();
   const centerX = rect.left + rect.width * 0.5;
@@ -910,13 +1105,16 @@ function updateMoveFromTouch(touch) {
   const x = dx * clamped;
   const y = dy * clamped;
 
+
   mobileMovement.right = THREE.MathUtils.clamp(x / maxRadius, -1, 1);
   mobileMovement.forward = THREE.MathUtils.clamp(-y / maxRadius, -1, 1);
+
 
   if (moveThumb) {
     moveThumb.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
   }
 }
+
 
 function resetMovePad() {
   mobileMovement.forward = 0;
@@ -926,14 +1124,17 @@ function resetMovePad() {
   }
 }
 
+
 function animate() {
   const delta = Math.min(0.05, clock.getDelta());
   const now = performance.now();
+
 
   moveCamera(delta);
   updateGuidedPath(delta);
   updateHotspots();
   updateImmersiveUI(now);
+
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
