@@ -82,7 +82,7 @@ const ASSET_BASE = IS_VERCEL_DEPLOY
   : "assets";
 
 const MODEL_PATHS = {
-  mainBlock: `${ASSET_BASE}/mainblock.glb`,
+  mainBlock: `${ASSET_BASE}/mainblocknew.glb`,
   classroom: `${ASSET_BASE}/classroom.glb`,
   lift: `${ASSET_BASE}/lift.glb`,
 };
@@ -124,29 +124,6 @@ manager.onLoad = () => {
 
 const gltfLoader = new GLTFLoader(manager);
 const exrLoader = new EXRLoader(manager);
-
-const ambient = new THREE.HemisphereLight(0xd8e4f0, 0x3a4450, 0.72);
-scene.add(ambient);
-
-const key = new THREE.DirectionalLight(0xffffff, 3.2);
-key.position.set(24, 32, 18);
-key.castShadow = true;
-key.shadow.mapSize.set(2048, 2048);
-key.shadow.camera.near = 1;
-key.shadow.camera.far = 120;
-key.shadow.radius = 5;
-scene.add(key);
-
-const fill = new THREE.PointLight(0xc9dce8, 1.1, 60, 2);
-fill.position.set(-6, 4, -8);
-scene.add(fill);
-
-const accent = new THREE.PointLight(0xa8bfd4, 0.65, 50, 2.2);
-accent.position.set(8, 2.5, 6);
-scene.add(accent);
-
-const ambientBottom = new THREE.AmbientLight(0xffffff, 0.3);
-scene.add(ambientBottom);
 
 // Load EXR environment map for realistic PBR reflections and lighting
 exrLoader.load(
