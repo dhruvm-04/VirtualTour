@@ -201,9 +201,9 @@ function loadModel(modelPath, onComplete) {
       velocity.set(0, 0, 0);
 
       // Hotspots are distributed along the interior axis of the building volume.
-      hotspotData[0].position.set(center.x + size.x * 0.15, startPos.y + 0.25, center.z + size.z * 0.1);
-      hotspotData[1].position.set(center.x - size.x * 0.22, startPos.y + 0.25, center.z - size.z * 0.15);
-      hotspotData[2].position.set(center.x, startPos.y + 0.25, center.z - size.z * 0.33);
+      hotspotData[0].position.set(-3.04, 3.65, -84.22);
+      hotspotData[1].position.set(19.25, 3.65, 112.14);
+      hotspotData[2].position.set(-68.76, 3.65, -55.18);
 
       guidePath[0].copy(startPos);
       guidePath[1].set(center.x + size.x * 0.2, startPos.y, center.z + size.z * 0.04);
@@ -416,6 +416,11 @@ function onKeyDown(event) {
   if (event.code === "KeyD") movement.right = true;
   if (event.code === "KeyG") toggleGuidedMode();
   if (event.code === "KeyF") toggleFullscreen();
+  if (event.code === "KeyP") {
+    const pos = controls.getObject().position;
+    console.log(`Camera Position: X=${pos.x.toFixed(2)}, Y=${pos.y.toFixed(2)}, Z=${pos.z.toFixed(2)}`);
+    console.log(`Paste this: position: new THREE.Vector3(${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+  }
   resetInactivity();
 }
 
