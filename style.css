@@ -359,21 +359,19 @@ h1 {
   position: absolute;
   pointer-events: none;
   transform: translate(-50%, -50%);
-  width: 1.36rem;
-  height: 1.36rem;
-  border-radius: 999px;
+  min-width: 0.72rem;
+  min-height: 0.72rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(2, 6, 10, 0.78);
-  border: 1px solid rgba(255, 157, 71, 0.82);
-  color: #ffad56;
-  font-size: 0.58rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
   text-transform: uppercase;
-  text-shadow: 0 0 8px rgba(255, 151, 52, 0.32);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.95), 0 0 3px rgba(0, 0, 0, 1);
   opacity: 0;
   transition: opacity 140ms ease;
   z-index: 8;
@@ -389,7 +387,15 @@ h1 {
 }
 
 .lift-btn-label.floor-btn.active {
-  box-shadow: 0 0 0 2px rgba(255, 145, 48, 0.75), 0 4px 16px rgba(0, 0, 0, 0.34);
+  color: #ffffff;
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.85), 0 0 8px rgba(0, 0, 0, 0.95);
+}
+
+.lift-btn-label:not(.floor-btn) {
+  color: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 700;
+  opacity: 0.96;
 }
 
 .lift-btn-label.visible {
@@ -400,15 +406,16 @@ h1 {
   position: absolute;
   pointer-events: none;
   transform: translate(-50%, -50%);
-  min-width: 138px;
-  max-width: 180px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 159, 61, 0.88);
-  background: rgba(2, 2, 2, 0.92);
-  color: #ffa348;
+  min-width: 40px;
+  max-width: 120px;
+  height: 56px;
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  color: #ffffff;
   text-align: center;
-  padding: 0.34rem 0.5rem;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  padding: 0;
+  box-shadow: none;
   opacity: 0;
   transition: opacity 160ms ease;
   z-index: 8;
@@ -419,18 +426,38 @@ h1 {
 }
 
 .lift-panel-main {
-  font-size: 0.95rem;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.3rem;
   font-weight: 800;
   line-height: 1.1;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.95), 0 0 7px rgba(255, 255, 255, 0.55);
 }
 
 .lift-panel-sub {
-  margin-top: 0.14rem;
-  font-size: 0.62rem;
-  color: #ffc184;
-  letter-spacing: 0.05em;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1rem;
+  color: #ffffff;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.95), 0 0 6px rgba(255, 255, 255, 0.45);
+  opacity: 0;
+}
+
+.lift-panel-overlay.arrow-up .lift-panel-sub {
+  opacity: 1;
+  transform: translate(-50%, calc(-50% - 23px));
+}
+
+.lift-panel-overlay.arrow-down .lift-panel-sub {
+  opacity: 1;
+  transform: translate(-50%, calc(-50% + 23px));
 }
 
 .bottom-wrap {
