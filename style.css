@@ -236,6 +236,22 @@ h1 {
   transform: translateY(-1px);
 }
 
+.ghost-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+#exit-lift-btn {
+  border-color: rgba(255, 163, 71, 0.5);
+  color: #ffb15f;
+  background: rgba(255, 138, 26, 0.08);
+}
+
+#exit-lift-btn:hover:not(:disabled) {
+  background: rgba(255, 138, 26, 0.18);
+}
+
 .controls-hint {
   position: absolute;
   top: 5.8rem;
@@ -337,6 +353,84 @@ h1 {
 .hotspot-btn:hover {
   background: rgba(255, 255, 255, 0.2);
   transform: translate(-50%, -54%);
+}
+
+.lift-btn-label {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  width: 1.36rem;
+  height: 1.36rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 6, 10, 0.78);
+  border: 1px solid rgba(255, 157, 71, 0.82);
+  color: #ffad56;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(255, 151, 52, 0.32);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transition: opacity 140ms ease;
+  z-index: 8;
+}
+
+.lift-btn-label.floor-btn {
+  cursor: default;
+}
+
+.lift-btn-label.floor-btn:disabled {
+  opacity: 0.52;
+  cursor: default;
+}
+
+.lift-btn-label.floor-btn.active {
+  box-shadow: 0 0 0 2px rgba(255, 145, 48, 0.75), 0 4px 16px rgba(0, 0, 0, 0.34);
+}
+
+.lift-btn-label.visible {
+  opacity: 1;
+}
+
+.lift-panel-overlay {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  min-width: 138px;
+  max-width: 180px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 159, 61, 0.88);
+  background: rgba(2, 2, 2, 0.92);
+  color: #ffa348;
+  text-align: center;
+  padding: 0.34rem 0.5rem;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: opacity 160ms ease;
+  z-index: 8;
+}
+
+.lift-panel-overlay.visible {
+  opacity: 1;
+}
+
+.lift-panel-main {
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.05em;
+}
+
+.lift-panel-sub {
+  margin-top: 0.14rem;
+  font-size: 0.62rem;
+  color: #ffc184;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .bottom-wrap {
@@ -480,6 +574,26 @@ h1 {
   .hotspot-btn {
     font-size: 0.72rem;
     padding: 0.5rem 0.76rem;
+  }
+
+  .lift-btn-label {
+    width: 1.24rem;
+    height: 1.24rem;
+    font-size: 0.54rem;
+  }
+
+  .lift-panel-overlay {
+    min-width: 126px;
+    max-width: 158px;
+    padding: 0.3rem 0.42rem;
+  }
+
+  .lift-panel-main {
+    font-size: 0.82rem;
+  }
+
+  .lift-panel-sub {
+    font-size: 0.56rem;
   }
 
   #mobile-controls {

@@ -17,6 +17,7 @@ const infoPanel = document.getElementById("info-panel");
 const hotspotLayer = document.getElementById("hotspot-layer");
 const prompt = document.getElementById("interaction-prompt");
 const backBtn = document.getElementById("back-btn");
+const exitLiftBtn = document.getElementById("exit-lift-btn");
 const fullscreenBtn = document.getElementById("fullscreen-btn");
 const guideBtn = document.getElementById("guide-btn");
 const controlsHint = document.querySelector(".controls-hint");
@@ -74,6 +75,66 @@ let cameraYaw = 0;
 let cameraPitch = 0;
 let mobilePopupTimer = null;
 let welcomeFadeTimer = null;
+let liftCurrentFloor = "G";
+let liftTargetFloor = null;
+let liftIsMoving = false;
+let mainBlockActiveFloor = "G";
+let liftTravelStart = 0;
+let liftTravelDuration = 0;
+let liftTravelRoute = [];
+let liftDisplayMesh = null;
+let liftDisplayTexture = null;
+let liftDisplayCanvas = null;
+let liftDisplayContext = null;
+let liftDisplayLastText = "";
+let liftDisplayOverlay = null;
+let mainBlockDefaultEyeY = 1.7;
+const liftOverlayScratch = new THREE.Vector3();
+const liftButtonMeshes = new Map();
+const liftButtonOverlayMap = new Map();
+const liftButtonLabels = [];
+const liftInteractiveButtons = [];
+
+const FLOOR_ORDER = ["G", "1", "2", "3", "4", "5", "6"];
+const FLOOR_TO_INDEX = new Map(FLOOR_ORDER.map((floor, idx) => [floor, idx]));
+const LIFT_BUTTON_TO_FLOOR = {
+  b1: "5",
+  b2: "6",
+  b3: "3",
+  b4: "4",
+  b5: "1",
+  b6: "2",
+  b7: "G",
+};
+const LIFT_BUTTON_SYMBOL = {
+  b8: "<>",
+  b9: "><",
+};
+
+const LIFT_EXIT_VIEW_OFFSETS = {
+  G: { offset: new THREE.Vector3(-10.9, 0, -11.96), lookOffset: new THREE.Vector3(-5.24, 0, -6.31) },
+  1: { offset: new THREE.Vector3(-10.9, 0, -11.96), lookOffset: new THREE.Vector3(-5.24, 0, -6.31) },
+  2: { offset: new THREE.Vector3(-10.9, 0, -11.96), lookOffset: new THREE.Vector3(-5.24, 0, -6.31) },
+  3: { offset: new THREE.Vector3(-10.9, 0, -11.96), lookOffset: new THREE.Vector3(-5.24, 0, -6.31) },
+  4: { offset: new THREE.Vector3(-10.9, 0, -11.96), lookOffset: new THREE.Vector3(-5.24, 0, -6.31) },
+  5: { offset: new THREE.Vector3(-10.9, 0, -11.96), lookOffset: new THREE.Vector3(-5.24, 0, -6.31) },
+  6: { offset: new THREE.Vector3(-10.9, 0, -11.96), lookOffset: new THREE.Vector3(-5.24, 0, -6.31) },
+};
+
+const LIFT_SPAWN_POSITION = new THREE.Vector3(-0.81, 5.28, 0);
+const LIFT_SPAWN_LOOK_TARGET = new THREE.Vector3(-5.21, 4.12, -5.96);
+
+const LIFT_EXIT_FLOOR_Y_ADJUST = {
+  G: 1.8,
+  1: 2.2,
+  2: 3.1,
+  3: 4.5,
+  4: 6.8,
+  5: 6.8,
+  6: 9.3,
+};
+
+const FLOOR_VERTICAL_STEP_SCALE = 1.55;
 
 const IS_VERCEL_DEPLOY =
   window.location.hostname.endsWith("vercel.app") || window.location.hostname.includes("-git-");
@@ -156,10 +217,14 @@ function loadModel(modelPath, onComplete) {
     (gltf) => {
       console.log("Model loaded successfully", gltf);
 
+      clearLiftRuntimeForModelSwitch(modelPath);
+
       if (modelRoot) {
         scene.remove(modelRoot);
       }
       modelMeshes.length = 0;
+      liftButtonMeshes.clear();
+      liftInteractiveButtons.length = 0;
 
       modelRoot = gltf.scene;
       modelRoot.traverse((node) => {
@@ -198,6 +263,9 @@ function loadModel(modelPath, onComplete) {
 
       controls.getObject().position.copy(startPos);
       cameraFloorY = startPos.y;
+      if (modelPath === MODEL_PATHS.mainBlock) {
+        mainBlockDefaultEyeY = startPos.y;
+      }
       velocity.set(0, 0, 0);
 
       // Hotspots are distributed along the interior axis of the building volume.
@@ -213,7 +281,10 @@ function loadModel(modelPath, onComplete) {
 
       scene.add(modelRoot);
       activeModelPath = modelPath;
+  configureLiftModelIfNeeded(modelPath);
       updateBackButtonVisibility();
+  updateExitLiftButton();
+      updateUIForInputMode();
       console.log("Model added to scene");
       loadingScreen.classList.remove("visible");
 
@@ -355,7 +426,12 @@ function bindEvents() {
     ui.classList.remove("ui-hidden");
   });
 
-  canvas.addEventListener("click", () => {
+  canvas.addEventListener("click", (event) => {
+    if (tryHandleLiftClick(event.clientX, event.clientY)) {
+      resetInactivity();
+      return;
+    }
+
     if (!isMobileView && !controls.isLocked && hasStarted) {
       controls.lock();
     }
@@ -397,6 +473,13 @@ function bindEvents() {
     });
   }
 
+  if (exitLiftBtn) {
+    exitLiftBtn.addEventListener("click", () => {
+      exitLiftAtCurrentFloor();
+      resetInactivity();
+    });
+  }
+
   window.addEventListener("resize", onResize);
   document.addEventListener("keydown", onKeyDown);
   document.addEventListener("keyup", onKeyUp);
@@ -414,12 +497,29 @@ function onKeyDown(event) {
   if (event.code === "KeyS") movement.backward = true;
   if (event.code === "KeyA") movement.left = true;
   if (event.code === "KeyD") movement.right = true;
-  if (event.code === "KeyG") toggleGuidedMode();
+  if (event.code === "KeyG" && activeModelPath !== MODEL_PATHS.lift) toggleGuidedMode();
   if (event.code === "KeyF") toggleFullscreen();
+  if (activeModelPath === MODEL_PATHS.lift) {
+    if (event.code === "Digit1") queueLiftFloor("1");
+    if (event.code === "Digit2") queueLiftFloor("2");
+    if (event.code === "Digit3") queueLiftFloor("3");
+    if (event.code === "Digit4") queueLiftFloor("4");
+    if (event.code === "Digit5") queueLiftFloor("5");
+    if (event.code === "Digit6") queueLiftFloor("6");
+    if (event.code === "KeyG") queueLiftFloor("G");
+    if (event.code === "KeyE") exitLiftAtCurrentFloor();
+  }
   if (event.code === "KeyP") {
     const pos = controls.getObject().position;
+    const lookDir = new THREE.Vector3();
+    camera.getWorldDirection(lookDir);
+    const lookPoint = pos.clone().addScaledVector(lookDir, 8);
     console.log(`Camera Position: X=${pos.x.toFixed(2)}, Y=${pos.y.toFixed(2)}, Z=${pos.z.toFixed(2)}`);
     console.log(`Paste this: position: new THREE.Vector3(${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+    console.log(`Look Target (8m): X=${lookPoint.x.toFixed(2)}, Y=${lookPoint.y.toFixed(2)}, Z=${lookPoint.z.toFixed(2)}`);
+    console.log(
+      `Preset snippet: { offset: new THREE.Vector3(${(pos.x - hotspotData[0].position.x).toFixed(2)}, 0, ${(pos.z - hotspotData[0].position.z).toFixed(2)}), lookOffset: new THREE.Vector3(${(lookPoint.x - hotspotData[0].position.x).toFixed(2)}, 0, ${(lookPoint.z - hotspotData[0].position.z).toFixed(2)}) }`
+    );
   }
   resetInactivity();
 }
@@ -433,6 +533,586 @@ function onKeyUp(event) {
   if (event.code === "KeyS") movement.backward = false;
   if (event.code === "KeyA") movement.left = false;
   if (event.code === "KeyD") movement.right = false;
+}
+
+function clearLiftRuntimeForModelSwitch(nextModelPath) {
+  while (liftButtonLabels.length > 0) {
+    const sprite = liftButtonLabels.pop();
+    if (sprite.parent) {
+      sprite.parent.remove(sprite);
+    }
+    if (sprite.material?.map) {
+      sprite.material.map.dispose();
+    }
+    sprite.material?.dispose?.();
+  }
+
+  if (liftDisplayTexture) {
+    liftDisplayTexture.dispose();
+    liftDisplayTexture = null;
+  }
+
+  liftDisplayCanvas = null;
+  liftDisplayContext = null;
+  liftDisplayMesh = null;
+  liftDisplayLastText = "";
+
+  liftButtonOverlayMap.forEach((overlayEl) => {
+    overlayEl.remove();
+  });
+  liftButtonOverlayMap.clear();
+
+  if (liftDisplayOverlay) {
+    liftDisplayOverlay.remove();
+    liftDisplayOverlay = null;
+  }
+
+  liftIsMoving = false;
+  liftTargetFloor = null;
+  liftTravelRoute = [];
+}
+
+function cloneMeshMaterials(mesh) {
+  if (!mesh?.material) {
+    return;
+  }
+
+  if (Array.isArray(mesh.material)) {
+    mesh.material = mesh.material.map((mat) => (mat?.clone ? mat.clone() : mat));
+    return;
+  }
+
+  if (mesh.material.clone) {
+    mesh.material = mesh.material.clone();
+  }
+}
+
+function makeLiftSymbolTexture(symbol) {
+  const canvasEl = document.createElement("canvas");
+  canvasEl.width = 256;
+  canvasEl.height = 256;
+  const ctx = canvasEl.getContext("2d");
+  if (!ctx) {
+    return null;
+  }
+
+  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.76)";
+  ctx.beginPath();
+  ctx.arc(128, 128, 98, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 160, 70, 0.9)";
+  ctx.lineWidth = 9;
+  ctx.beginPath();
+  ctx.arc(128, 128, 98, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = "#ff9f3f";
+  ctx.font = "700 128px Manrope, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(symbol, 128, 134);
+
+  const texture = new THREE.CanvasTexture(canvasEl);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function addLiftButtonLabel(mesh, symbol) {
+  const texture = makeLiftSymbolTexture(symbol);
+  if (!texture) {
+    return;
+  }
+
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(0.24, 0.24, 1);
+
+  let zOffset = 0.03;
+  if (mesh.geometry) {
+    mesh.geometry.computeBoundingBox();
+    const bbox = mesh.geometry.boundingBox;
+    if (bbox) {
+      zOffset = (bbox.max.z - bbox.min.z) * 0.55 + 0.02;
+    }
+  }
+
+  sprite.position.set(0, 0, zOffset);
+  sprite.renderOrder = 999;
+  mesh.add(sprite);
+  liftButtonLabels.push(sprite);
+}
+
+function createLiftButtonOverlay(meshName, symbol, mesh) {
+  if (!hotspotLayer || !mesh || liftButtonOverlayMap.has(meshName)) {
+    return;
+  }
+
+  const label = document.createElement("div");
+  label.className = "lift-btn-label";
+  label.textContent = symbol;
+
+  const mappedFloor = LIFT_BUTTON_TO_FLOOR[meshName];
+  if (mappedFloor) {
+    label.classList.add("floor-btn");
+  } else {
+    label.title = symbol === "<>" ? "Door Open (not interactive yet)" : "Door Close (not interactive yet)";
+  }
+
+  hotspotLayer.appendChild(label);
+  liftButtonOverlayMap.set(meshName, label);
+}
+
+function setLiftButtonVisual(mesh, isActive) {
+  const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  materials.forEach((mat) => {
+    if (!mat) {
+      return;
+    }
+
+    if ("emissive" in mat) {
+      mat.emissive.setHex(isActive ? 0xff8d2e : 0x000000);
+      mat.emissiveIntensity = isActive ? 0.8 : 0;
+      mat.needsUpdate = true;
+    }
+  });
+}
+
+function updateLiftButtonVisuals() {
+  liftButtonMeshes.forEach((mesh, buttonName) => {
+    const mappedFloor = LIFT_BUTTON_TO_FLOOR[buttonName];
+    const isCurrent = !liftIsMoving && mappedFloor === liftCurrentFloor;
+    const isTarget = liftIsMoving && mappedFloor === liftTargetFloor;
+    setLiftButtonVisual(mesh, isCurrent || isTarget);
+
+    const overlay = liftButtonOverlayMap.get(buttonName);
+    if (!overlay) {
+      return;
+    }
+
+    const isFloorButton = Boolean(mappedFloor);
+    if (isFloorButton) {
+      overlay.classList.toggle("active", isCurrent || isTarget);
+    }
+  });
+}
+
+function ensureLiftDisplayPanel(mesh) {
+  liftDisplayCanvas = document.createElement("canvas");
+  liftDisplayCanvas.width = 1024;
+  liftDisplayCanvas.height = 512;
+  liftDisplayContext = liftDisplayCanvas.getContext("2d");
+  if (!liftDisplayContext) {
+    return;
+  }
+
+  liftDisplayTexture = new THREE.CanvasTexture(liftDisplayCanvas);
+  liftDisplayTexture.colorSpace = THREE.SRGBColorSpace;
+  liftDisplayTexture.minFilter = THREE.LinearFilter;
+  liftDisplayTexture.magFilter = THREE.LinearFilter;
+  liftDisplayTexture.needsUpdate = true;
+
+  const panelMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    map: liftDisplayTexture,
+    transparent: false,
+    side: THREE.DoubleSide,
+  });
+
+  mesh.material = panelMaterial;
+  liftDisplayMesh = mesh;
+  ensureLiftDisplayOverlay();
+  updateLiftDisplayText(`FLOOR ${liftCurrentFloor}`, "Select a floor");
+}
+
+function ensureLiftDisplayOverlay() {
+  if (!hotspotLayer || liftDisplayOverlay) {
+    return;
+  }
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "lift-panel-overlay";
+
+  const main = document.createElement("div");
+  main.className = "lift-panel-main";
+
+  const sub = document.createElement("div");
+  sub.className = "lift-panel-sub";
+
+  wrapper.appendChild(main);
+  wrapper.appendChild(sub);
+  hotspotLayer.appendChild(wrapper);
+  liftDisplayOverlay = wrapper;
+}
+
+function updateLiftDisplayText(primaryLine, secondaryLine = "") {
+  if (!liftDisplayContext || !liftDisplayTexture) {
+    return;
+  }
+
+  const textKey = `${primaryLine}||${secondaryLine}`;
+  if (textKey === liftDisplayLastText) {
+    return;
+  }
+  liftDisplayLastText = textKey;
+
+  const ctx = liftDisplayContext;
+  const w = liftDisplayCanvas.width;
+  const h = liftDisplayCanvas.height;
+  ctx.fillStyle = "#060606";
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.strokeStyle = "rgba(255, 141, 46, 0.7)";
+  ctx.lineWidth = 10;
+  ctx.strokeRect(16, 16, w - 32, h - 32);
+
+  ctx.fillStyle = "#ff972f";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "700 152px Manrope, sans-serif";
+  ctx.fillText(primaryLine, w * 0.5, h * 0.45);
+
+  if (secondaryLine) {
+    ctx.font = "600 64px Manrope, sans-serif";
+    ctx.fillStyle = "#ffc07d";
+    ctx.fillText(secondaryLine, w * 0.5, h * 0.76);
+  }
+
+  liftDisplayTexture.needsUpdate = true;
+
+  if (liftDisplayOverlay) {
+    const main = liftDisplayOverlay.querySelector(".lift-panel-main");
+    const sub = liftDisplayOverlay.querySelector(".lift-panel-sub");
+    if (main) {
+      main.textContent = primaryLine;
+    }
+    if (sub) {
+      sub.textContent = secondaryLine;
+    }
+  }
+}
+
+function configureLiftModelIfNeeded(modelPath) {
+  if (!modelRoot || modelPath !== MODEL_PATHS.lift) {
+    return;
+  }
+
+  modelRoot.traverse((node) => {
+    if (!node.isMesh) {
+      return;
+    }
+
+    const nodeName = (node.name || "").trim();
+    if (!nodeName) {
+      return;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(LIFT_BUTTON_TO_FLOOR, nodeName)) {
+      cloneMeshMaterials(node);
+      liftButtonMeshes.set(nodeName, node);
+      liftInteractiveButtons.push({ mesh: node, floor: LIFT_BUTTON_TO_FLOOR[nodeName] });
+      addLiftButtonLabel(node, LIFT_BUTTON_TO_FLOOR[nodeName]);
+      createLiftButtonOverlay(nodeName, LIFT_BUTTON_TO_FLOOR[nodeName], node);
+      return;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(LIFT_BUTTON_SYMBOL, nodeName)) {
+      cloneMeshMaterials(node);
+      liftButtonMeshes.set(nodeName, node);
+      addLiftButtonLabel(node, LIFT_BUTTON_SYMBOL[nodeName]);
+      createLiftButtonOverlay(nodeName, LIFT_BUTTON_SYMBOL[nodeName], node);
+      return;
+    }
+
+    if (nodeName === "Cube.002") {
+      cloneMeshMaterials(node);
+      ensureLiftDisplayPanel(node);
+    }
+  });
+
+  updateLiftButtonVisuals();
+  updateLiftDisplayText(`FLOOR ${liftCurrentFloor}`, "Select a floor");
+  updateUIForInputMode();
+}
+
+function tryHandleLiftClick(screenX, screenY) {
+  if (activeModelPath !== MODEL_PATHS.lift || !liftInteractiveButtons.length) {
+    return false;
+  }
+
+  const ndc = new THREE.Vector2();
+  if (!isMobileView && controls.isLocked) {
+    ndc.set(0, 0);
+  } else if (typeof screenX === "number" && typeof screenY === "number") {
+    ndc.x = (screenX / window.innerWidth) * 2 - 1;
+    ndc.y = -(screenY / window.innerHeight) * 2 + 1;
+  } else {
+    ndc.set(0, 0);
+  }
+
+  // Collision checks reuse the same raycaster and shorten its range; reset it for UI interactions.
+  raycaster.near = 0;
+  raycaster.far = Infinity;
+  raycaster.setFromCamera(ndc, camera);
+  const targets = liftInteractiveButtons.map((entry) => entry.mesh);
+  const hits = raycaster.intersectObjects(targets, false);
+  if (!hits.length) {
+    const screenTargetX = ndc.x === 0 ? window.innerWidth * 0.5 : ((ndc.x + 1) * 0.5) * window.innerWidth;
+    const screenTargetY = ndc.y === 0 ? window.innerHeight * 0.5 : ((1 - ndc.y) * 0.5) * window.innerHeight;
+    const maxDistPx = controls.isLocked ? 180 : 90;
+    const nearest = findNearestLiftFloorButton(screenTargetX, screenTargetY, maxDistPx);
+    if (!nearest) {
+      return false;
+    }
+
+    queueLiftFloor(nearest.floor);
+    return true;
+  }
+
+  const firstMesh = hits[0].object;
+  const entry = liftInteractiveButtons.find((item) => item.mesh === firstMesh);
+  if (!entry) {
+    return false;
+  }
+
+  queueLiftFloor(entry.floor);
+  return true;
+}
+
+function findNearestLiftFloorButton(screenX, screenY, maxDistancePx) {
+  let nearest = null;
+  let nearestDistSq = maxDistancePx * maxDistancePx;
+
+  liftInteractiveButtons.forEach((entry) => {
+    entry.mesh.getWorldPosition(liftOverlayScratch);
+    const projected = liftOverlayScratch.clone().project(camera);
+    const visible = projected.z < 1 && projected.z > -1;
+    if (!visible) {
+      return;
+    }
+
+    const px = (projected.x * 0.5 + 0.5) * window.innerWidth;
+    const py = (projected.y * -0.5 + 0.5) * window.innerHeight;
+    const dx = px - screenX;
+    const dy = py - screenY;
+    const distSq = dx * dx + dy * dy;
+    if (distSq > nearestDistSq) {
+      return;
+    }
+
+    nearestDistSq = distSq;
+    nearest = entry;
+  });
+
+  return nearest;
+}
+
+function buildLiftTravelRoute(fromFloor, toFloor) {
+  const fromIdx = FLOOR_TO_INDEX.get(fromFloor);
+  const toIdx = FLOOR_TO_INDEX.get(toFloor);
+  if (fromIdx === undefined || toIdx === undefined) {
+    return [fromFloor, toFloor];
+  }
+
+  const step = fromIdx <= toIdx ? 1 : -1;
+  const route = [FLOOR_ORDER[fromIdx]];
+  for (let idx = fromIdx + step; step > 0 ? idx <= toIdx : idx >= toIdx; idx += step) {
+    route.push(FLOOR_ORDER[idx]);
+  }
+  return route;
+}
+
+function queueLiftFloor(floor) {
+  if (activeModelPath !== MODEL_PATHS.lift || !FLOOR_TO_INDEX.has(floor)) {
+    return;
+  }
+
+  if (liftIsMoving) {
+    return;
+  }
+
+  if (liftCurrentFloor === floor) {
+    liftTargetFloor = null;
+    updateLiftDisplayText(`FLOOR ${liftCurrentFloor}`, "Already here");
+    updateLiftButtonVisuals();
+    updateExitLiftButton();
+    return;
+  }
+
+  liftTargetFloor = floor;
+  liftTravelRoute = buildLiftTravelRoute(liftCurrentFloor, floor);
+  liftTravelStart = performance.now();
+  liftTravelDuration = Math.max(1000, (liftTravelRoute.length - 1) * 1300);
+  liftIsMoving = true;
+
+  const fromFloor = liftTravelRoute[0];
+  const nextFloor = liftTravelRoute[1] ?? floor;
+  updateLiftDisplayText(`MOVING ${fromFloor}>${nextFloor}`, `Target ${floor}`);
+  updateLiftButtonVisuals();
+  updateExitLiftButton();
+}
+
+function updateLiftTravel(now) {
+  if (!liftIsMoving || activeModelPath !== MODEL_PATHS.lift) {
+    return;
+  }
+
+  if (!liftTargetFloor || liftTravelRoute.length < 2) {
+    liftIsMoving = false;
+    updateExitLiftButton();
+    return;
+  }
+
+  const elapsed = now - liftTravelStart;
+  const progress = THREE.MathUtils.clamp(elapsed / liftTravelDuration, 0, 1);
+  const segmentCount = liftTravelRoute.length - 1;
+  const routeProgress = progress * segmentCount;
+  const segIndex = Math.min(segmentCount - 1, Math.floor(routeProgress));
+  const fromFloor = liftTravelRoute[segIndex];
+  const toFloor = liftTravelRoute[Math.min(segIndex + 1, segmentCount)];
+
+  updateLiftDisplayText(`MOVING ${fromFloor}>${toFloor}`, `Target ${liftTargetFloor}`);
+
+  if (progress >= 1) {
+    liftCurrentFloor = liftTargetFloor;
+    liftTargetFloor = null;
+    liftIsMoving = false;
+    updateLiftDisplayText(`FLOOR ${liftCurrentFloor}`, "Press Exit Lift");
+    updateLiftButtonVisuals();
+    updateExitLiftButton();
+  }
+}
+
+function positionOverlayElement(worldPos, overlayEl, extraYOffset = 0) {
+  if (!overlayEl) {
+    return;
+  }
+
+  const projected = worldPos.clone().project(camera);
+  const visible = projected.z < 1 && projected.z > -1;
+  if (!visible) {
+    overlayEl.classList.remove("visible");
+    return;
+  }
+
+  const x = (projected.x * 0.5 + 0.5) * window.innerWidth;
+  const y = (projected.y * -0.5 + 0.5) * window.innerHeight + extraYOffset;
+  overlayEl.style.left = `${x}px`;
+  overlayEl.style.top = `${y}px`;
+  overlayEl.classList.toggle("visible", hasStarted && activeModelPath === MODEL_PATHS.lift);
+}
+
+function updateLiftOverlays() {
+  if (activeModelPath !== MODEL_PATHS.lift) {
+    liftButtonOverlayMap.forEach((overlayEl) => overlayEl.classList.remove("visible"));
+    if (liftDisplayOverlay) {
+      liftDisplayOverlay.classList.remove("visible");
+    }
+    return;
+  }
+
+  liftButtonOverlayMap.forEach((overlayEl, meshName) => {
+    const mesh = liftButtonMeshes.get(meshName);
+    if (!mesh) {
+      overlayEl.classList.remove("visible");
+      return;
+    }
+
+    mesh.getWorldPosition(liftOverlayScratch);
+    positionOverlayElement(liftOverlayScratch, overlayEl);
+  });
+
+  if (liftDisplayMesh && liftDisplayOverlay) {
+    liftDisplayMesh.getWorldPosition(liftOverlayScratch);
+    positionOverlayElement(liftOverlayScratch, liftDisplayOverlay, -16);
+  }
+}
+
+function updateExitLiftButton() {
+  if (!exitLiftBtn) {
+    return;
+  }
+
+  const inLift = activeModelPath === MODEL_PATHS.lift;
+  if (!inLift) {
+    exitLiftBtn.hidden = true;
+    exitLiftBtn.disabled = true;
+    exitLiftBtn.textContent = "Exit Lift";
+    return;
+  }
+
+  exitLiftBtn.hidden = false;
+  if (liftIsMoving) {
+    exitLiftBtn.disabled = true;
+    exitLiftBtn.textContent = `Moving to ${liftTargetFloor ?? "..."}`;
+    return;
+  }
+
+  exitLiftBtn.disabled = false;
+  exitLiftBtn.textContent = `Exit Lift at ${liftCurrentFloor}`;
+}
+
+function positionAtMainBlockFloor(floor) {
+  if (!modelRoot || activeModelPath !== MODEL_PATHS.mainBlock) {
+    return;
+  }
+
+  const floorIndex = FLOOR_TO_INDEX.get(floor) ?? 0;
+  const bounds = new THREE.Box3().setFromObject(modelRoot);
+  const size = bounds.getSize(new THREE.Vector3());
+
+  const liftAnchor = hotspotData[0].position.clone();
+  const baseStep = size.y / 10;
+  const estimatedStep = THREE.MathUtils.clamp(baseStep * FLOOR_VERTICAL_STEP_SCALE, 6.2, 13.8);
+  const floorYOffset = LIFT_EXIT_FLOOR_Y_ADJUST[floor] ?? 0;
+  const eyeY =
+    floor === "G"
+      ? THREE.MathUtils.clamp(mainBlockDefaultEyeY, bounds.min.y + 1.6, bounds.max.y - 1.2)
+      : THREE.MathUtils.clamp(
+          liftAnchor.y + floorIndex * estimatedStep + floorYOffset,
+          bounds.min.y + 1.6,
+          bounds.max.y - 1.2
+        );
+
+  const viewPreset = LIFT_EXIT_VIEW_OFFSETS[floor] ?? LIFT_EXIT_VIEW_OFFSETS.G;
+  const exitPos = new THREE.Vector3(liftAnchor.x, eyeY, liftAnchor.z).add(viewPreset.offset);
+
+  // Keep the Lift hotspot aligned to the current floor so re-entry remains intuitive.
+  hotspotData[0].position.set(liftAnchor.x, eyeY - 0.28, liftAnchor.z);
+  mainBlockActiveFloor = floor;
+
+  controls.getObject().position.copy(exitPos);
+  cameraFloorY = eyeY;
+  velocity.set(0, 0, 0);
+
+  const lookTarget = new THREE.Vector3(liftAnchor.x, eyeY, liftAnchor.z).add(viewPreset.lookOffset);
+  camera.lookAt(lookTarget);
+  if (isMobileView) {
+    syncMobileLookFromCamera();
+  }
+}
+
+function exitLiftAtCurrentFloor() {
+  if (activeModelPath !== MODEL_PATHS.lift || liftIsMoving) {
+    return;
+  }
+
+  const destinationFloor = liftCurrentFloor;
+  guidedMode = false;
+  guideBtn.textContent = "Guided Path";
+  loadingScreen.classList.add("visible");
+  progressText.textContent = `Exiting lift to floor ${destinationFloor}...`;
+
+  loadModel(MODEL_PATHS.mainBlock, () => {
+    positionAtMainBlockFloor(destinationFloor);
+    progressText.textContent = "100%";
+  });
 }
 
 function onResize() {
@@ -603,6 +1283,11 @@ function teleportToLift() {
   progressText.textContent = "Teleporting to Lift...";
 
   loadModel(MODEL_PATHS.lift, () => {
+    // Apply fixed spawn position and orientation every time entering the lift
+    controls.getObject().position.copy(LIFT_SPAWN_POSITION);
+    camera.lookAt(LIFT_SPAWN_LOOK_TARGET);
+    cameraFloorY = LIFT_SPAWN_POSITION.y;
+    velocity.set(0, 0, 0);
     progressText.textContent = "100%";
   });
 }
@@ -677,9 +1362,12 @@ function updateRendererForViewport() {
 
 function updateUIForInputMode() {
   if (controlsHint) {
+    const interactionHint = activeModelPath === MODEL_PATHS.lift ? "Interact: Lift buttons" : "Interact: Click hotspots";
+    const mobileInteractionHint =
+      activeModelPath === MODEL_PATHS.lift ? "Interact: Tap lift buttons" : "Interact: Tap hotspots";
     const hint = isMobileView
-      ? ["Move: Left Joystick", "Look: Swipe", "Use panel buttons to teleport", "Interact: Tap hotspots"]
-      : ["Move: WASD", "Look: Mouse", "Unlock: ESC", "Interact: Click hotspots"];
+      ? ["Move: Left Joystick", "Look: Swipe", "Use panel buttons to teleport", mobileInteractionHint]
+      : ["Move: WASD", "Look: Mouse", "Unlock: ESC", interactionHint];
     const rows = controlsHint.querySelectorAll("p");
     rows.forEach((row, idx) => {
       if (hint[idx]) {
@@ -780,6 +1468,12 @@ function onCanvasTouchStart(event) {
 
   const touch = event.changedTouches[0];
   if (!touch) {
+    return;
+  }
+
+  if (tryHandleLiftClick(touch.clientX, touch.clientY)) {
+    resetInactivity();
+    event.preventDefault();
     return;
   }
 
@@ -914,7 +1608,9 @@ function animate() {
 
   moveCamera(delta);
   updateGuidedPath(delta);
+  updateLiftTravel(now);
   updateHotspots();
+  updateLiftOverlays();
   updateImmersiveUI(now);
 
   renderer.render(scene, camera);
