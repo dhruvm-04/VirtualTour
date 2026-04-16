@@ -339,6 +339,78 @@ h1 {
   transform: translate(-50%, -54%);
 }
 
+.lift-btn-label {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  min-width: 1.6rem;
+  padding: 0.24rem 0.46rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 180, 110, 0.6);
+  background: rgba(15, 11, 8, 0.72);
+  color: #ffb067;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 200ms var(--ease), transform 200ms var(--ease), box-shadow 200ms var(--ease);
+}
+
+.lift-btn-label.visible {
+  opacity: 1;
+}
+
+.lift-btn-label.floor-btn.active {
+  color: #ffe8cf;
+  border-color: rgba(255, 164, 73, 0.95);
+  background: rgba(54, 24, 8, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 176, 103, 0.45), 0 0 18px rgba(255, 138, 48, 0.35);
+  transform: translate(-50%, -53%);
+}
+
+.lift-panel-overlay {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  min-width: 3.6rem;
+  padding: 0.34rem 0.52rem;
+  border-radius: 0.62rem;
+  border: 1px solid rgba(255, 151, 47, 0.7);
+  background: rgba(8, 6, 4, 0.82);
+  color: #ffac5c;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 180ms var(--ease), transform 180ms var(--ease), box-shadow 180ms var(--ease);
+}
+
+.lift-panel-overlay.visible {
+  opacity: 1;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+}
+
+.lift-panel-main {
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.lift-panel-sub {
+  margin-top: 0.14rem;
+  min-height: 0.68rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #ffd8ab;
+  letter-spacing: 0.09em;
+}
+
+.lift-panel-overlay.arrow-up .lift-panel-sub,
+.lift-panel-overlay.arrow-down .lift-panel-sub {
+  color: #ffbe7e;
+}
+
 .bottom-wrap {
   position: absolute;
   left: 1rem;
