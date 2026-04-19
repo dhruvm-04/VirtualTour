@@ -155,10 +155,7 @@ const MODEL_PATHS = {
   mainBlock: `${ASSET_BASE}/mainblocknew.glb`,
   classroom: `${ASSET_BASE}/classroom.glb`,
   lift: `${ASSET_BASE}/lift.glb`,
-  peopleWalking: `${ASSET_BASE}/peoplewalking.glb`,
 };
-
-const PEOPLE_ANIMATION_TIME_SCALE = 1.0;
 
 const MODEL_SPAWN = {
   [MODEL_PATHS.mainBlock]: { eyeHeightMin: 4, eyeHeightRatio: 0.067, eyeHeightMax: 7, zOffsetRatio: 0.18 },
@@ -167,10 +164,6 @@ const MODEL_SPAWN = {
 };
 
 let activeModelPath = MODEL_PATHS.mainBlock;
-let peopleWalkingGroup = null;
-let peopleWalkingMixer = null;
-let peopleWalkingActions = [];
-let peopleWalkingLoaded = false;
 
 const hotspotData = [
   { id: "classrooms", label: "Lift", position: new THREE.Vector3(), mesh: null, button: null },
@@ -290,7 +283,7 @@ function loadModel(modelPath, onComplete) {
             const mats = Array.isArray(node.material) ? node.material : [node.material];
             mats.forEach((mat) => {
               if (scene.environment) {
-               mat.envMap = scene.environment;
+                mat.envMap = scene.environment;
               }
               mat.envMapIntensity = 1.0;
               mat.needsUpdate = true;
@@ -344,10 +337,9 @@ function loadModel(modelPath, onComplete) {
 
       scene.add(modelRoot);
       activeModelPath = modelPath;
-      syncPeopleWalkingWithMainBlock();
-      configureLiftModelIfNeeded(modelPath);
+  configureLiftModelIfNeeded(modelPath);
       updateBackButtonVisibility();
-      updateExitLiftButton();
+  updateExitLiftButton();
       updateUIForInputMode();
       console.log("Model added to scene");
       loadingScreen.classList.remove("visible");
@@ -967,90 +959,6 @@ function configureLiftModelIfNeeded(modelPath) {
   updateLiftButtonVisuals();
   updateLiftDisplayText(`${liftCurrentFloor}`, "", "none");
   updateUIForInputMode();
-}
-
-function updatePeopleWalkingPosition() {
-  if (!peopleWalkingGroup) {
-    return;
-  }
-
-  // The people file is exported with scene-relative positions for each armature.
-  // Do not apply additional offsets unless you specifically want to move the whole crowd.
-  peopleWalkingGroup.position.set(0, 0, 0);
-  peopleWalkingGroup.rotation.set(0, 0, 0);
-}
-
-function updatePeopleWalkingVisibility() {
-  if (!peopleWalkingGroup) {
-    return;
-  }
-  peopleWalkingGroup.visible = activeModelPath === MODEL_PATHS.mainBlock;
-}
-
-function loadPeopleWalking() {
-  if (peopleWalkingLoaded) {
-    updatePeopleWalkingPosition();
-    updatePeopleWalkingVisibility();
-    return;
-  }
-
-  gltfLoader.load(
-    MODEL_PATHS.peopleWalking,
-    (gltf) => {
-      console.log("People walking model loaded", gltf);
-      peopleWalkingGroup = gltf.scene;
-      peopleWalkingGroup.name = "peopleWalkingGroup";
-      peopleWalkingGroup.traverse((node) => {
-        if (node.isMesh) {
-          node.castShadow = true;
-          node.receiveShadow = true;
-          node.frustumCulled = false;
-          if (node.material) {
-            const mats = Array.isArray(node.material) ? node.material : [node.material];
-            mats.forEach((mat) => {
-              if (scene.environment) {
-                mat.envMap = scene.environment;
-              }
-              mat.envMapIntensity = 1.0;
-              mat.needsUpdate = true;
-            });
-          }
-        }
-      });
-
-      if (gltf.animations && gltf.animations.length) {
-        peopleWalkingMixer = new THREE.AnimationMixer(peopleWalkingGroup);
-        gltf.animations.forEach((clip) => {
-          const action = peopleWalkingMixer.clipAction(clip);
-          action.reset();
-          action.setLoop(THREE.LoopRepeat, Infinity);
-          action.clampWhenFinished = false;
-          action.timeScale = PEOPLE_ANIMATION_TIME_SCALE;
-          action.play();
-          peopleWalkingActions.push(action);
-        });
-      } else {
-        console.warn("People walking GLB loaded with no animations.");
-      }
-
-      updatePeopleWalkingPosition();
-      updatePeopleWalkingVisibility();
-      scene.add(peopleWalkingGroup);
-      peopleWalkingLoaded = true;
-    },
-    undefined,
-    (error) => {
-      console.error("Failed to load peoplewalking.glb:", error);
-    }
-  );
-}
-
-function syncPeopleWalkingWithMainBlock() {
-  if (activeModelPath === MODEL_PATHS.mainBlock) {
-    loadPeopleWalking();
-  } else {
-    updatePeopleWalkingVisibility();
-  }
 }
 
 function logLiftUiAnchors() {
@@ -1869,9 +1777,6 @@ function animate() {
   moveCamera(delta);
   updateGuidedPath(delta);
   updateLiftTravel(now);
-  if (peopleWalkingMixer) {
-    peopleWalkingMixer.update(delta);
-  }
   updateHotspots();
   updateLiftOverlays();
   updateImmersiveUI(now);
