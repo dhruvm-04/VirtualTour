@@ -152,17 +152,20 @@ const ASSET_BASE = IS_VERCEL_DEPLOY
   : "assets";
 
 const MODEL_PATHS = {
-  mainBlock: `${ASSET_BASE}/mainblocknew.glb`,
+  mainBlock: `${ASSET_BASE}/mainblocknewest.glb`,
   classroom: `${ASSET_BASE}/classroom.glb`,
+  seminarHall: `${ASSET_BASE}/semhall.glb`,
   lift: `${ASSET_BASE}/lift.glb`,
   peopleWalking: `${ASSET_BASE}/peoplewalking.glb`,
 };
 
 const PEOPLE_ANIMATION_TIME_SCALE = 1.0;
+const SEMINAR_HALL_SCALE = 2;
 
 const MODEL_SPAWN = {
   [MODEL_PATHS.mainBlock]: { eyeHeightMin: 4, eyeHeightRatio: 0.067, eyeHeightMax: 7, zOffsetRatio: 0.18 },
   [MODEL_PATHS.classroom]: { eyeHeightMin: 6, eyeHeightRatio: 0.16, eyeHeightMax: 4.2, zOffsetRatio: 0.04 },
+  [MODEL_PATHS.seminarHall]: { eyeHeightMin: 1.7, eyeHeightRatio: 0.08, eyeHeightMax: 3.2, zOffsetRatio: 0 },
   [MODEL_PATHS.lift]: { eyeHeightMin: 3.6, eyeHeightRatio: 0.96, eyeHeightMax: 5.28, zOffsetRatio: 0 },
 };
 
@@ -174,8 +177,8 @@ let peopleWalkingLoaded = false;
 
 const hotspotData = [
   { id: "classrooms", label: "Lift", position: new THREE.Vector3(), mesh: null, button: null },
-  { id: "labs", label: "Lab", position: new THREE.Vector3(), mesh: null, button: null },
   { id: "infrastructure", label: "Classroom", position: new THREE.Vector3(), mesh: null, button: null },
+  { id: "seminarHall", label: "Seminar Hall", position: new THREE.Vector3(-12.20, 3.65, 120.54), mesh: null, button: null },
 ];
 
 const guidePath = [
@@ -222,38 +225,56 @@ const accent = new THREE.PointLight(0xa0b8d0, 0.25, 50, 2.2);
 accent.position.set(8, 2.5, 6);
 scene.add(accent);
 
-// Load EXR environment map for realistic PBR reflections and lighting
-exrLoader.load(
-  `${ASSET_BASE}/grasslands_sunset_2k.exr`,
-  (envTex) => {
-    const envMap = pmremGenerator.fromEquirectangular(envTex).texture;
-    scene.environment = envMap;
-    scene.background = envMap;
+function applyHdriEnvironment(envTex) {
+  const envMap = pmremGenerator.fromEquirectangular(envTex).texture;
+  scene.environment = envMap;
+  scene.background = envMap;
 
-    envTex.dispose();
-    pmremGenerator.dispose();
+  envTex.dispose();
+  pmremGenerator.dispose();
 
-    if (modelRoot) {
-      modelRoot.traverse((node) => {
-        if (node.isMesh && node.material) {
-          const mats = Array.isArray(node.material) ? node.material : [node.material];
-          mats.forEach((mat) => {
-            mat.envMap = envMap;
-            mat.envMapIntensity = 1.4;
-            mat.needsUpdate = true;
-          });
-        }
-      });
-    }
-
-    console.log("HDRI environment loaded and PMREM processed successfully");
-  },
-  undefined,
-  (error) => {
-    console.warn("HDRI failed to load, using fallback:", error);
-    pmremGenerator.dispose();
+  if (modelRoot) {
+    modelRoot.traverse((node) => {
+      if (node.isMesh && node.material) {
+        const mats = Array.isArray(node.material) ? node.material : [node.material];
+        mats.forEach((mat) => {
+          mat.envMap = envMap;
+          mat.envMapIntensity = 1.4;
+          mat.needsUpdate = true;
+        });
+      }
+    });
   }
-);
+
+  console.log("HDRI environment loaded and PMREM processed successfully");
+}
+
+function loadHdriWithFallback(urls, index = 0) {
+  if (index >= urls.length) {
+    console.warn("HDRI failed for all fallback URLs. Using default scene background.");
+    pmremGenerator.dispose();
+    return;
+  }
+
+  exrLoader.load(
+    urls[index],
+    (envTex) => applyHdriEnvironment(envTex),
+    undefined,
+    (error) => {
+      console.warn(`HDRI load failed at ${urls[index]}. Trying next fallback.`, error);
+      loadHdriWithFallback(urls, index + 1);
+    }
+  );
+}
+
+// Load EXR environment map for realistic PBR reflections and lighting.
+loadHdriWithFallback([
+  `${ASSET_BASE}/grasslands_sunset_2k.exr`,
+  `assets/grasslands_sunset_2k.exr`,
+  `${ASSET_BASE}/the_sky_is_on_fire_2k.exr`,
+  `assets/the_sky_is_on_fire_2k.exr`,
+  "https://raw.githubusercontent.com/dhruvm-04/VirtualTour/main/assets/grasslands_sunset_2k.exr",
+]);
 
 loadModel(MODEL_PATHS.mainBlock);
 createHotspotMarkers();
@@ -281,6 +302,9 @@ function loadModel(modelPath, onComplete) {
       liftInteractiveButtons.length = 0;
 
       modelRoot = gltf.scene;
+      if (modelPath === MODEL_PATHS.seminarHall) {
+        modelRoot.scale.setScalar(SEMINAR_HALL_SCALE);
+      }
       modelRoot.traverse((node) => {
         if (node.isMesh) {
           node.castShadow = true;
@@ -319,6 +343,10 @@ function loadModel(modelPath, onComplete) {
         box.min.y + eyeHeight,
         center.z + size.z * spawnTuning.zOffsetRatio
       );
+      if (modelPath === MODEL_PATHS.seminarHall) {
+        // Place camera at the model's interior center to avoid spawning below or outside.
+        startPos.set(center.x, center.y + Math.max(2.2, size.y * 0.12), center.z);
+      }
       console.log("Start position:", startPos);
 
       controls.getObject().position.copy(startPos);
@@ -333,8 +361,8 @@ function loadModel(modelPath, onComplete) {
 
       // Hotspots are distributed along the interior axis of the building volume.
       hotspotData[0].position.set(-3.04, 3.65, -84.22);
-      hotspotData[1].position.set(19.25, 3.65, 112.14);
-      hotspotData[2].position.set(-68.76, 3.65, -55.18);
+      hotspotData[1].position.set(-68.76, 3.65, -55.18);
+      hotspotData[2].position.set(42.4, 3.65, -24.8);
 
       guidePath[0].copy(startPos);
       guidePath[1].set(center.x + size.x * 0.2, startPos.y, center.z + size.z * 0.04);
@@ -1518,6 +1546,10 @@ function setActiveCard(topic) {
     teleportToClassroom();
   }
 
+  if (topic === "seminarHall") {
+    teleportToSeminarHall();
+  }
+
   resetInactivity();
 }
 
@@ -1548,6 +1580,21 @@ function teleportToLift() {
 
   loadModel(MODEL_PATHS.lift, () => {
     applyLiftSpawnPose();
+    progressText.textContent = "100%";
+  });
+}
+
+function teleportToSeminarHall() {
+  if (activeModelPath === MODEL_PATHS.seminarHall) {
+    return;
+  }
+
+  guidedMode = false;
+  guideBtn.textContent = "Guided Path";
+  loadingScreen.classList.add("visible");
+  progressText.textContent = "Teleporting to Seminar Hall...";
+
+  loadModel(MODEL_PATHS.seminarHall, () => {
     progressText.textContent = "100%";
   });
 }
