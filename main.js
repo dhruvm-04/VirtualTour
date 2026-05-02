@@ -26,6 +26,10 @@ const movePad = document.getElementById("move-pad");
 const moveThumb = document.getElementById("move-thumb");
 const mobilePopup = document.getElementById("mobile-popup");
 
+const creditsBtn = document.getElementById("credits-btn");
+const creditsModal = document.getElementById("credits-modal");
+const creditsClose = document.getElementById("credits-close");
+
 console.log("DOM elements loaded:", { canvas, hero, enterBtn, ui });
 
 const scene = new THREE.Scene();
@@ -580,6 +584,44 @@ function bindEvents() {
     exitLiftBtn.addEventListener("click", () => {
       exitLiftAtCurrentFloor();
       resetInactivity();
+    });
+  }
+
+  // Credits modal toggle
+  if (creditsBtn && creditsModal) {
+    const openCreditsModal = () => {
+      creditsModal.classList.add("visible");
+      creditsModal.setAttribute("aria-hidden", "false");
+    };
+    creditsBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openCreditsModal();
+    });
+  }
+
+  if (creditsClose && creditsModal) {
+    const closeCreditsModal = () => {
+      creditsModal.classList.remove("visible");
+      creditsModal.setAttribute("aria-hidden", "true");
+    };
+    creditsClose.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeCreditsModal();
+    });
+
+    // Close on Escape
+    document.addEventListener("keydown", (ev) => {
+      if ((ev.key === "Escape" || ev.code === "Escape") && creditsModal.classList.contains("visible")) {
+        closeCreditsModal();
+      }
+    });
+
+    // Close when clicking outside the modal
+    document.addEventListener("click", (ev) => {
+      if (!creditsModal.classList.contains("visible")) return;
+      const target = ev.target;
+      if (creditsModal.contains(target) || (creditsBtn && creditsBtn.contains(target))) return;
+      closeCreditsModal();
     });
   }
 

@@ -53,6 +53,7 @@
             <p>Engineering Block Virtual Tour</p>
           </div>
           <div class="actions">
+            <button id="credits-btn" class="ghost-btn" type="button" aria-haspopup="dialog" aria-controls="credits-modal">Credits</button>
             <button id="back-btn" class="ghost-btn" type="button" hidden>Back to Main Block</button>
             <button id="exit-lift-btn" class="ghost-btn" type="button" hidden>Exit Lift</button>
             <button id="fullscreen-btn" class="ghost-btn" type="button">Fullscreen</button>
@@ -103,6 +104,16 @@
     </section>
 
     <div id="interaction-prompt" class="interaction-prompt">Click to lock pointer and walk through</div>
+
+    <aside id="credits-modal" class="overlay-card" role="dialog" aria-modal="true" aria-hidden="true">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem">
+        <h3 style="margin:0;font-family:Syne, sans-serif">Credits</h3>
+        <button id="credits-close" class="ghost-btn" type="button">Close</button>
+      </div>
+      <p style="margin-top:0.8rem;color:var(--text-muted)">Dhruv Maheshwari</p>
+      <p style="margin-top:0.8rem;color:var(--text-muted)">Dhruv Naik</p>
+      <p style="margin-top:0.8rem;color:var(--text-muted)">PES University Bangalore</p>
+    </aside>
 
     <script type="module" src="main.js"></script>
   </body>
